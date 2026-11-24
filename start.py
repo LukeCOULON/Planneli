@@ -11,11 +11,12 @@ import subprocess
 import sys
 import tempfile
 from contextlib import contextmanager
+from dataclasses import replace
 from pathlib import Path
 
 from planning.config import CONFIG_FILE, PROJECT, read_config
 from planning.database import DATABASE_NAME, backup, initialize, restore
-from planning.updates import apply_pending, pending_revision
+from planning.updates import apply_pending, pending_revision, release_lock
 
 
 ENVIRONMENT = PROJECT / ".venv-planning"
@@ -168,8 +169,11 @@ def main():
             print(f"Anciennes données rattachées · {args.claim_existing}")
             return 0
 
-        if config.mode == "normal":
-            with installation_lock():
+        if os.environ.get("WEB_DEPLOY_FORCE_PORT") == "1":
+            config = replace(config, host=os.environ["WEB_DEPLOY_HOST"], port=int(os.environ["WEB_DEPLOY_PORT"]))
+
+        if config.mode == "normal" and os.environ.get("WEB_DEPLOY_MANAGED_UPDATE") != "1":
+            with release_lock(PROJECT):
                 if pending_revision(PROJECT):
                     host = {"0.0.0.0": "127.0.0.1", "::": "::1"}.get(config.host, config.host)
                     try:

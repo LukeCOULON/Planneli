@@ -1,6 +1,24 @@
 {
-  "version": "v0.2.12",
+  "version": "v0.2.13",
   "releases": [
+    {
+      "version": "v0.2.13",
+      "news": [
+        "La distribution de Planneli contient un guide d’installation immédiat et les fichiers nécessaires à son utilisation.",
+        "Les réglages du planning proposent un aperçu de l’alternance, une sélection plus simple des années et des jours de garde, ainsi qu’un accès direct depuis le calendrier.",
+        "La section Maintenance affiche directement la version installée, ses nouveautés et les mises à jour préparées.",
+        "L’accueil affiche sur son illustration la garde du jour, la prochaine passation, les rendez-vous et les tâches à rendre.",
+        "Les titulaires peuvent inviter un compte à consulter le planning en lecture seule avec un code, un lien ou un QR code.",
+        "Les cours Markdown prennent en charge les quiz avec correction à révéler.",
+        "Une page Navigateur intégré a été ajoutée à l’accueil en préparation de l’intégration du navigateur.",
+        "L’accueil classe les applications par catégorie et chaque compte peut choisir ses raccourcis et l’ordre de ses favoris.",
+        "Le navigateur intégré démarre Nav Unit à la demande sur l’ordinateur qui héberge Planneli.",
+        "Au premier accès à une session, Planneli propose de choisir les applications de l’accueil et la vue d’agenda par défaut.",
+        "Le navigateur intégré utilise Bing pour les recherches saisies dans sa barre d’adresse.",
+        "Web Deployer vérifie les mises à jour de Planneli et relance le serveur après leur installation.",
+        "Le planning de garde peut être activé à l’inscription ou dans les réglages du calendrier de chaque compte."
+      ]
+    },
     {
       "version": "v0.2.12",
       "news": [
@@ -8,17 +26,5 @@
       ]
     }
   ],
-  "pending": [
-    "La distribution de Planneli contient un guide d’installation immédiat et les fichiers nécessaires à son utilisation.",
-    "Les réglages du planning proposent un aperçu de l’alternance, une sélection plus simple des années et des jours de garde, ainsi qu’un accès direct depuis le calendrier.",
-    "La section Maintenance affiche directement la version installée, ses nouveautés et les mises à jour préparées.",
-    "L’accueil affiche sur son illustration la garde du jour, la prochaine passation, les rendez-vous et les tâches à rendre.",
-    "Les titulaires peuvent inviter un compte à consulter le planning en lecture seule avec un code, un lien ou un QR code.",
-    "Les cours Markdown prennent en charge les quiz avec correction à révéler.",
-    "Une page Navigateur intégré a été ajoutée à l’accueil en préparation de l’intégration du navigateur.",
-    "L’accueil classe les applications par catégorie et chaque compte peut choisir ses raccourcis et l’ordre de ses favoris.",
-    "Le navigateur intégré démarre Nav Unit à la demande sur l’ordinateur qui héberge Planneli.",
-    "Au premier accès à une session, Planneli propose de choisir les applications de l’accueil et la vue d’agenda par défaut.",
-    "Le navigateur intégré utilise Bing pour les recherches saisies dans sa barre d’adresse."
-  ]
+  "pending": []
 }

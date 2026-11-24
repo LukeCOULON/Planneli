@@ -136,6 +136,13 @@
                     <input id="auth-password" name="password" type="password" autocomplete="{{ 'new-password' if invitation else 'current-password' }}" minlength="8" maxlength="128" required>
                     <p class="muted small" data-password-hint{% if not invitation %} hidden{% endif %}>8 caractères minimum.</p>
                 </div>
+                {% if not invitation_read_only %}
+                <label class="planning-switch" data-register-custody{% if not invitation %} hidden{% endif %}>
+                    <span><strong>Afficher le planning de garde</strong><small id="auth-custody-hint">Ajoute le calendrier des gardes et des passations à votre espace.</small></span>
+                    <input type="checkbox" name="custody_enabled" role="switch" aria-label="Afficher le planning de garde" aria-describedby="auth-custody-hint"{% if not invitation %} disabled{% endif %}>
+                    <span class="planning-switch-track" aria-hidden="true"></span>
+                </label>
+                {% endif %}
                 <p class="error" data-error role="alert" hidden></p>
                 <button class="button primary" type="submit">{{ 'Créer un compte et rejoindre' if invitation else auth_title }}</button>
             </form>
@@ -156,7 +163,7 @@
     {% if active and not read_only %}
     <nav class="tab-bar" aria-label="Navigation principale">
         <a class="tone-planning" href="/" data-route="/" aria-current="page"><svg class="icon" aria-hidden="true"><use href="#i-home"></use></svg><span>Accueil</span></a>
-        <a class="tone-planning" href="/planning" data-route="/planning"><svg class="icon" aria-hidden="true"><use href="#i-calendar"></use></svg><span>Planning</span></a>
+        <a class="tone-planning" href="/planning" data-route="/planning" data-planning-tab{% if not custody_enabled %} hidden{% endif %}><svg class="icon" aria-hidden="true"><use href="#i-calendar"></use></svg><span>Planning</span></a>
         <a class="tone-events" href="/evenements" data-route="/evenements" aria-label="Événements"><svg class="icon" aria-hidden="true"><use href="#i-event"></use></svg><span>Agenda</span></a>
         <a class="tone-notes" href="/notes" data-route="/notes"><svg class="icon" aria-hidden="true"><use href="#i-note"></use></svg><span>Notes</span></a>
         <a class="tone-tasks" href="/a-faire" data-route="/a-faire"><svg class="icon" aria-hidden="true"><use href="#i-task"></use></svg><span>À faire</span></a>

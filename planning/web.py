@@ -9,7 +9,7 @@ from werkzeug.exceptions import HTTPException
 
 from .accounts import (
     AccountChanged, account_context, account_info, account_routes, account_transaction, connection_code,
-    current_account, find_account, find_invitation, has_session, login_digest,
+    current_account, find_account, find_invitation, has_session, login_digest, shows_custody,
 )
 from .activity import PAGES, log_activity
 from .config import PROJECT, ROUTER_CONFIG, SITE_NAME
@@ -202,7 +202,7 @@ def create_app(database, mode, *, router_config=ROUTER_CONFIG, nav_unit=None):
             "index.html", mode=mode, welcome=welcome and not read_only, account=account_context(account) if account else None,
             active=active, site_name=site_name, default_site_name=SITE_NAME, invitation=invitation,
             invitation_code=code, invitation_error=invitation_error, invitation_read_only=invitation_read_only,
-            read_only=read_only, release=release,
+            read_only=read_only, custody_enabled=account is not None and shows_custody(account), release=release,
         ), invitation_error.status if invitation_error else 200)
         response.headers["Cache-Control"] = "no-store"
         set_device_cookie(response, device)
@@ -219,13 +219,15 @@ def create_app(database, mode, *, router_config=ROUTER_CONFIG, nav_unit=None):
     @app.get("/api/session")
     def session():
         with account_transaction(database) as connection:
+            custody_enabled = shows_custody(g.account)
             if not has_session(g.account):
-                return {"account": account_info(g.account), "settings": None}
+                return {"account": account_info(g.account), "settings": None, "custody_enabled": custody_enabled}
             settings = settings_row(connection, g.workspace)
             zone = timezone_for(connection, g.workspace, settings)
         today = datetime.now(zone).date()
         info = {
-            "account": account_info(g.account), "settings": dict(settings) if settings else None,
+            "account": account_info(g.account), "settings": dict(settings) if settings and custody_enabled else None,
+            "custody_enabled": custody_enabled,
             "today": today.isoformat(), "timezone": zone.key,
         }
         if not g.account["read_only"]:
@@ -248,8 +250,9 @@ def create_app(database, mode, *, router_config=ROUTER_CONFIG, nav_unit=None):
             zone = timezone_for(connection, g.workspace, settings)
             today = datetime.now(zone).date()
             day = today.isoformat()
+            custody_enabled = shows_custody(g.account)
             custody, handoff = None, None
-            if settings is not None:
+            if settings is not None and custody_enabled:
                 parents = [
                     {"name": settings[f"name_{key}"], "color": settings[f"color_{key}"]}
                     for key in ("a", "b")
@@ -272,7 +275,7 @@ def create_app(database, mode, *, router_config=ROUTER_CONFIG, nav_unit=None):
                 (g.workspace, day, day),
             ).fetchall()
         return {
-            "day": day, "custody": custody, "handoff": handoff,
+            "day": day, "custody_enabled": custody_enabled, "custody": custody, "handoff": handoff,
             "events": [dict(row) for row in events[:2]], "more_events": len(events) > 2,
             "tasks": [dict(row) for row in tasks[:2]], "more_tasks": len(tasks) > 2,
         }

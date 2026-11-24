@@ -1,6 +1,13 @@
 import { activeSheet, api, closeSheet, escapeHtml, field, formError, icon, sheet, styleDropdown, submitForm, toast } from "./ui.js";
 
 const shownConfigurations = new WeakMap();
+const planningPath = "/planning";
+
+function availableCategories(categories, custodyEnabled) {
+    return custodyEnabled ? categories : categories.map(category => ({
+        ...category, apps: category.apps.filter(app => app.path !== planningPath),
+    }));
+}
 
 function homeIcon(app) {
     return `<span class="space-icon">${icon(app.symbol)}</span>`;
@@ -15,13 +22,14 @@ function applicationCard(app) {
     </a>`;
 }
 
-export function renderHomeApps(host, configuration) {
+export function renderHomeApps(host, configuration, custodyEnabled) {
     if (shownConfigurations.get(host) === configuration) return;
     shownConfigurations.set(host, configuration);
-    const { categories, hidden, favorites } = configuration;
+    const { hidden, favorites } = configuration;
+    const categories = availableCategories(configuration.categories, custodyEnabled);
     const appsByPath = new Map(categories.flatMap(category => category.apps.map(app => [app.path, app])));
     const groups = [
-        { id: "favoris", title: "Favoris", apps: favorites.map(path => appsByPath.get(path)) },
+        { id: "favoris", title: "Favoris", apps: favorites.filter(path => appsByPath.has(path)).map(path => appsByPath.get(path)) },
         ...categories.map(category => ({
             ...category, apps: category.apps.filter(app => !hidden.includes(app.path) && !favorites.includes(app.path)),
         })),
@@ -34,11 +42,12 @@ export function renderHomeApps(host, configuration) {
 
 const agendaViews = [["week", "Semaine"], ["month", "Mois"], ["year", "Année"]];
 
-export function renderHomePreferences(host, configuration, onUpdate, onboarding = false) {
-    const { categories } = configuration;
+export function renderHomePreferences(host, configuration, onUpdate, { onboarding = false, custodyEnabled = true } = {}) {
+    const categories = availableCategories(configuration.categories, custodyEnabled);
     const appsByPath = new Map(categories.flatMap(category => category.apps.map(app => [app.path, app])));
     const hidden = new Set(configuration.hidden);
-    const favorites = [...configuration.favorites];
+    const favorites = configuration.favorites.filter(path => appsByPath.has(path));
+    let hiddenPlanningRank = custodyEnabled ? -1 : configuration.favorites.indexOf(planningPath);
     host.innerHTML = `<form class="stack-lg home-preferences">
         <p class="muted">${onboarding ? "Choisissez les applications à afficher sur votre accueil et la vue de votre agenda."
             : "Choisissez vos applications et vos favoris. Masquer une application masque aussi ses cartes dans le résumé « Aujourd’hui »."}</p>
@@ -125,25 +134,28 @@ export function renderHomePreferences(host, configuration, onUpdate, onboarding 
     form.querySelector("[data-home-reset]")?.addEventListener("click", () => {
         hidden.clear();
         favorites.length = 0;
+        hiddenPlanningRank = -1;
         agenda.value = "month";
         styleDropdown(agenda);
         showChoices();
     });
     showChoices();
     submitForm(form, async (_data, button) => {
-        const preferences = button.hasAttribute("data-home-skip")
+        const skip = button.hasAttribute("data-home-skip");
+        const preferences = skip
             ? { hidden: configuration.hidden, favorites: configuration.favorites, agenda_view: configuration.agenda_view }
-            : { hidden: [...hidden], favorites, agenda_view: agenda.value };
+            : { hidden: [...hidden], favorites: [...favorites], agenda_view: agenda.value };
+        if (!skip && hiddenPlanningRank !== -1) preferences.favorites.splice(hiddenPlanningRank, 0, planningPath);
         await api("/account/home-preferences", "PUT", preferences);
         toast("Accueil personnalisé.");
         await onUpdate();
     });
 }
 
-export function openHomeOnboarding(configuration, onUpdate) {
+export function openHomeOnboarding(configuration, onUpdate, custodyEnabled) {
     const content = sheet("Configurer mon accueil", "<div data-onboarding></div>");
     renderHomePreferences(content.querySelector("[data-onboarding]"), configuration, async () => {
         if (activeSheet(content)) closeSheet();
         await onUpdate();
-    }, true);
+    }, { onboarding: true, custodyEnabled });
 }

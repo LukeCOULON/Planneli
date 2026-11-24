@@ -37,7 +37,7 @@ function versionPanel(info, showUpdateButton = false) {
     const [latest, ...history] = info.releases;
     const prepared = info.pending_version ? `${escapeHtml(info.pending_version)} est prête.` : "Une mise à jour est prête.";
     const status = info.pending
-        ? `${prepared} Relancez Planneli pour l’appliquer.`
+        ? `${prepared} Utilisez « Mettre à jour Planneli » dans Web Deployer, ou relancez Planneli si vous l’avez démarré avec start.py.`
         : "Aucune mise à jour préparée.";
     return `<section class="maintenance-version stack">
         <header class="maintenance-version-header">

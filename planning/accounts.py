@@ -16,7 +16,7 @@ from .config import SITE_NAME, local_invitation_host, read_router_origin
 from .database import WORKSPACE_TABLES, transaction
 from .home_apps import home_configuration, home_preferences
 from .qrnativegen import QRCode
-from .rules import InputError, text_value
+from .rules import InputError, boolean_value, text_value
 from .visits import record_visit, set_device_cookie
 
 
@@ -60,7 +60,8 @@ def login_digest():
 def find_account(connection, digest):
     return connection.execute(
         """SELECT accounts.id, accounts.username, accounts.own_workspace, accounts.joined_workspace, accounts.site_name,
-                  accounts.read_only, accounts.home_preferences, accounts.onboarding_pending, workspaces.id AS workspace_id,
+                  accounts.read_only, accounts.home_preferences, accounts.onboarding_pending, accounts.custody_enabled,
+                  workspaces.id AS workspace_id,
                   workspaces.share_code, workspaces.read_only_code,
                   owners.username AS owner
            FROM account_logins JOIN accounts ON accounts.id = account_id
@@ -86,6 +87,10 @@ def account_context(account):
 
 def has_session(account):
     return account["share_code"] is not None
+
+
+def shows_custody(account):
+    return bool(account["read_only"] or account["custody_enabled"])
 
 
 def connection_code(raw):
@@ -194,6 +199,7 @@ def account_routes(database, json_input, router_config):
         data = json_input()
         username, password = credentials(data)
         code = connection_code(data["code"]) if "code" in data else None
+        custody_enabled = boolean_value(data, "custody_enabled", "Planning de garde") if "custody_enabled" in data else True
         key = username_key(username)
         password_hash = generate_password_hash(password)
         with transaction(database, write=True) as connection:
@@ -208,9 +214,9 @@ def account_routes(database, json_input, router_config):
             ).lastrowid
             connection.execute(
                 """INSERT INTO accounts(id, username, username_key, password_hash, own_workspace, joined_workspace, read_only,
-                   onboarding_pending) VALUES (?, ?, ?, ?, ?, ?, ?, 1)""",
+                   onboarding_pending, custody_enabled) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)""",
                 (account, username, key, password_hash, account, invitation["id"] if invitation else None,
-                 invitation["read_only"] if invitation else 0),
+                 invitation["read_only"] if invitation else 0, custody_enabled),
             )
             response = issue_login(connection, account)
         g.activity_user_id = account
@@ -306,6 +312,13 @@ def account_routes(database, json_input, router_config):
                 "UPDATE accounts SET home_preferences = ?, onboarding_pending = 0 WHERE id = ?",
                 (json.dumps(preferences), g.account["id"]),
             )
+        return "", 204
+
+    @blueprint.put("/calendar-preferences")
+    def save_calendar_preferences():
+        enabled = boolean_value(json_input(), "custody_enabled", "Planning de garde")
+        with account_transaction(database, write=True) as connection:
+            connection.execute("UPDATE accounts SET custody_enabled = ? WHERE id = ?", (enabled, g.account["id"]))
         return "", 204
 
     @blueprint.post("/join")

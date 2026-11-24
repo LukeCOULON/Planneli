@@ -187,6 +187,7 @@ MIGRATIONS = (
     ),
     ("ALTER TABLE accounts ADD COLUMN home_preferences TEXT",),
     ("ALTER TABLE accounts ADD COLUMN onboarding_pending INTEGER NOT NULL DEFAULT 0 CHECK (onboarding_pending IN (0, 1))",),
+    ("ALTER TABLE accounts ADD COLUMN custody_enabled INTEGER NOT NULL DEFAULT 1 CHECK (custody_enabled IN (0, 1))",),
 )
 
 

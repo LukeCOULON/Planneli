@@ -22,12 +22,12 @@ function itemList(items, route, key, detail, emptyMessage) {
     </a></li>`).join("")}</ul>`;
 }
 
-function overview({ day, custody, handoff, events, more_events, tasks, more_tasks }, hidden) {
+function overview({ day, custody_enabled, custody, handoff, events, more_events, tasks, more_tasks }, hidden) {
     const planning = "/planning";
     const agenda = "/evenements";
     const actions = "/a-faire";
     const cards = [];
-    const planningVisible = !hidden.includes(planning);
+    const planningVisible = custody_enabled && !hidden.includes(planning);
     if (planningVisible) {
         cards.push(summaryCard({
             title: "Garde du jour", symbol: "user", tone: "tone-planning",

@@ -9,6 +9,8 @@ if (authForm) {
     const switchMode = document.querySelector("[data-switch-account]");
     const submit = authForm.querySelector('[type="submit"]');
     const invitation = Boolean(authForm.elements.namedItem("code"));
+    const custodyChoice = authForm.querySelector("[data-register-custody]");
+    const custody = authForm.elements.custody_enabled;
     let register = invitation;
     switchMode?.addEventListener("click", () => {
         register = !register;
@@ -18,6 +20,8 @@ if (authForm) {
         authForm.elements.password.value = "";
         authForm.elements.password.autocomplete = register ? "new-password" : "current-password";
         document.querySelector("[data-password-hint]").hidden = !register;
+        custodyChoice.hidden = !register;
+        custody.disabled = !register;
         authForm.querySelector("[data-error]").hidden = true;
         submit.textContent = title;
         switchMode.textContent = register ? "Se connecter" : "Créer un compte";
@@ -26,6 +30,7 @@ if (authForm) {
     submitForm(authForm, async data => {
         if (switchMode) switchMode.disabled = true;
         try {
+            if (register && custody) data.custody_enabled = custody.checked;
             await api(register ? "/account/register" : "/account/login", "POST", data);
             if (invitation) location.replace("/");
             else location.reload();

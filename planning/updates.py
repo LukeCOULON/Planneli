@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import subprocess
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 
@@ -114,11 +115,35 @@ def pending_journal(project):
     return read_version(project / WORK_DIRECTORY / "pending" / "sources", optional=True)
 
 
-def fetch_release(project):
+@contextmanager
+def release_lock(project):
     directory = project / WORK_DIRECTORY
     directory.mkdir(mode=0o700, exist_ok=True)
-    if pending_revision(project):
-        raise ValueError("Une mise à jour est déjà prête. Redémarrez Planneli pour l’appliquer.")
+    with (directory / "lock").open("a+b") as lock:
+        if os.name == "nt":
+            import msvcrt
+
+            lock.seek(0)
+            msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        yield
+
+
+def fetch_release(project, *, reuse_pending=False):
+    with release_lock(project):
+        pending = pending_revision(project)
+        if pending:
+            if reuse_pending:
+                return pending
+            raise ValueError("Une mise à jour est déjà prête. Relancez Planneli ou appliquez-la dans Web Deployer.")
+        return prepare_release(project)
+
+
+def prepare_release(project):
+    directory = project / WORK_DIRECTORY
     current = read_version(project, optional=True)
     environment = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
 
@@ -168,7 +193,7 @@ def remove_pending(workspace, pending):
         pending.rename(Path(temporary) / "release")
 
 
-def apply_pending(project):
+def apply_pending(project, *, startup=None):
     revision = pending_revision(project)
     if not revision:
         return None
@@ -204,14 +229,18 @@ def apply_pending(project):
             atomic_copy(sources / relative, target)
             if target.suffix == ".py":
                 Path(importlib.util.cache_from_source(str(target))).unlink(missing_ok=True)
-        atomic_copy(pending / "revision", workspace / "installed")
-    except OSError:
+        with startup if startup is not None else nullcontext():
+            atomic_copy(pending / "revision", workspace / "installed")
+    except Exception:
         for relative in paths:
+            target = project / relative
             original = originals / relative
             if original.is_file():
-                atomic_copy(original, project / relative)
+                atomic_copy(original, target)
             else:
-                (project / relative).unlink(missing_ok=True)
+                target.unlink(missing_ok=True)
+            if target.suffix == ".py":
+                Path(importlib.util.cache_from_source(str(target))).unlink(missing_ok=True)
         raise
     remove_pending(workspace, pending)
     return revision

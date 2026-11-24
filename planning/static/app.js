@@ -44,6 +44,8 @@ const titles = {
 
 function updateNavigation() {
     document.title = current === "/" ? `${siteName} · Planning familial` : `${titles[current]} · ${siteName}`;
+    const planningTab = document.querySelector("[data-planning-tab]");
+    if (ready && planningTab) planningTab.hidden = !session.custody_enabled;
     document.querySelectorAll('.tab-bar [data-route], .settings-link').forEach(link => {
         if (link.dataset.route === current) link.setAttribute("aria-current", "page");
         else link.removeAttribute("aria-current");
@@ -57,7 +59,7 @@ function updateHome() {
             <button class="button secondary" type="button">Réessayer</button></div>`;
         summary.querySelector("button").onclick = connect;
     } else if (ready) {
-        renderHomeApps(page.querySelector("#home-apps"), session.home);
+        renderHomeApps(page.querySelector("#home-apps"), session.home, session.custody_enabled);
         void renderToday(summary, page.querySelector("#hero-date"), setupPlanning, session.home.hidden);
     }
 }
@@ -161,7 +163,7 @@ async function connect() {
             await loadSession();
             if (current === "/") render();
             else await move("/");
-        });
+        }, session.custody_enabled);
         const dialog = document.querySelector("#sheet");
         if (dialog.open) dialog.addEventListener("close", show, { once: true });
         else show();

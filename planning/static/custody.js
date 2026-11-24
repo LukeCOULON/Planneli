@@ -20,6 +20,15 @@ export function renderPlanning(host, session, position, onSetup) {
     const settings = session.settings;
     const readOnly = session.account.read_only;
     const readOnlyLabel = '<span class="viewer-label">Lecture seule</span>';
+    if (!session.custody_enabled) {
+        host.innerHTML = pageHeading("Planning de garde", "calendar", "tone-planning") + empty(
+            "Planning de garde désactivé",
+            "Vous pouvez consulter vos événements dans l’agenda ou réactiver la garde dans les réglages du calendrier.",
+            `<div class="flow"><a class="button primary" href="/evenements" data-route="/evenements">Ouvrir l’agenda</a>
+                <a class="button secondary" href="/reglages?section=calendrier" data-route="/reglages">Réglages du calendrier</a></div>`,
+        );
+        return;
+    }
     if (!settings) {
         if (readOnly) {
             host.innerHTML = pageHeading("Mon planning", "calendar", "tone-planning", readOnlyLabel)
@@ -318,6 +327,22 @@ function editDayNote(day, settings, note, onCancel, onDone) {
 }
 
 export function renderPlanningSettings(host, session, page, onUpdate) {
+    if (page === "calendrier") {
+        host.innerHTML = `<form class="stack planning-form">
+            ${planningSwitch("custody_enabled", "Afficher le planning de garde",
+                "Affiche les gardes et les passations sur ce compte. Vos réglages de garde sont conservés si vous désactivez cette option.",
+                session.custody_enabled)}
+            ${formError}
+            <div class="planning-save"><button type="submit" class="button primary">Enregistrer</button></div>
+        </form>`;
+        const form = host.querySelector("form");
+        submitForm(form, async () => {
+            await api("/account/calendar-preferences", "PUT", { custody_enabled: form.elements.custody_enabled.checked });
+            toast("Réglages du calendrier enregistrés.");
+            await onUpdate();
+        });
+        return;
+    }
     if (page === "parents") {
         host.innerHTML = parentSettingsForm(session, "planning-timezones");
         bindParentSettings(host.querySelector("form"), session, onUpdate);

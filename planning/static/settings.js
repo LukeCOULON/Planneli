@@ -9,8 +9,9 @@ const groups = [
     { title: "Compte", symbol: "user", tone: "tone-planning", pages: [
         ["session", "Session"], ["profil", "Profil"], ["apparence", "Apparence"], ["accueil", "Accueil", "home"],
     ] },
-    { title: "Planning", symbol: "calendar", tone: "tone-events", pages: [
-        ["parents", "Alternance", "swap"], ["weekends", "Week-ends", "calendar"], ["gardes", "Gardes", "user"],
+    { title: "Calendrier", symbol: "calendar", tone: "tone-events", pages: [
+        ["calendrier", "Affichage", "settings"], ["parents", "Alternance", "swap"],
+        ["weekends", "Week-ends", "calendar"], ["gardes", "Gardes", "user"],
     ] },
     { title: "Données", symbol: "task", tone: "tone-notes", pages: [
         ["corbeille", "Corbeille"], ["maintenance", "Maintenance"],
@@ -31,9 +32,11 @@ function settingsLink(page) {
 
 export function renderSettings(host, session, requestedPage, onUpdate) {
     const group = groups.find(item => item.pages.some(([id]) => id === requestedPage)) ?? groups[0];
-    const [page, title, symbol] = group.pages.find(([id]) => id === requestedPage) ?? group.pages[0];
     const isPlanning = group === groups[1];
+    const pages = isPlanning && !session.custody_enabled ? group.pages.slice(0, 1) : group.pages;
+    const [page, title, symbol] = pages.find(([id]) => id === requestedPage) ?? pages[0];
     const sessionLabel = session.account.owner ? `Session de ${session.account.owner}` : "Session partagée";
+    const calendarRoute = session.custody_enabled ? "/planning" : "/evenements";
 
     host.innerHTML = `<header class="settings-masthead${isPlanning ? " settings-masthead--planning" : ""}">
         ${isPlanning ? "" : `<div class="settings-emblem" aria-hidden="true">${icon("settings")}</div>`}
@@ -41,7 +44,8 @@ export function renderSettings(host, session, requestedPage, onUpdate) {
             <h1>Réglages</h1>
             <p class="settings-session-label">${icon("user")}<span>${escapeHtml(sessionLabel)}</span></p>
         </div>
-        ${isPlanning ? `<a class="button secondary" href="/planning" data-route="/planning">${icon("calendar")} <span>Voir le planning</span></a>` : ""}
+        ${isPlanning ? `<a class="button secondary" href="${calendarRoute}" data-route="${calendarRoute}">
+            ${icon("calendar")} <span>${session.custody_enabled ? "Voir le planning" : "Voir l’agenda"}</span></a>` : ""}
     </header>
     <div class="settings-layout">
         <nav class="settings-nav panel" aria-label="Sections des réglages">
@@ -57,13 +61,13 @@ export function renderSettings(host, session, requestedPage, onUpdate) {
             </div>`).join("")}
         </nav>
         <section class="settings-pane panel ${group.tone}${isPlanning ? " settings-pane--planning" : ""}" aria-labelledby="settings-pane-title">
-            ${isPlanning ? `<nav class="planning-settings-nav" aria-label="Réglages du planning">
-                ${group.pages.map(([id, label, tabIcon]) => `<a href="${settingsLink(id)}" data-route="/reglages"
+            ${isPlanning && pages.length > 1 ? `<nav class="planning-settings-nav" aria-label="Réglages du calendrier">
+                ${pages.map(([id, label, tabIcon]) => `<a href="${settingsLink(id)}" data-route="/reglages"
                     ${id === page ? 'aria-current="page"' : ""}>${icon(tabIcon)}<span>${label}</span></a>`).join("")}
             </nav>` : ""}
             <header class="settings-pane-header">
                 <div class="settings-pane-icon">${icon(symbol ?? dataPages[page]?.symbol ?? group.symbol)}</div>
-                <h2 id="settings-pane-title" tabindex="-1">${page === "gardes" ? "Personnes de garde" : title}</h2>
+                <h2 id="settings-pane-title" tabindex="-1">${page === "gardes" ? "Personnes de garde" : page === "calendrier" ? "Affichage du calendrier" : title}</h2>
             </header>
             <div class="settings-pane-body stack" data-settings-body></div>
         </section>
@@ -71,7 +75,7 @@ export function renderSettings(host, session, requestedPage, onUpdate) {
 
     const body = host.querySelector("[data-settings-body]");
     if (page === "accueil") {
-        renderHomePreferences(body, session.home, onUpdate);
+        renderHomePreferences(body, session.home, onUpdate, { custodyEnabled: session.custody_enabled });
     } else if (group === groups[0]) {
         renderAccountSettings(body, session.account, page);
     } else if (isPlanning) {
