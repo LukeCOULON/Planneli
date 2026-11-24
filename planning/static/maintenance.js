@@ -23,6 +23,14 @@ function connectionTime(timestamp) {
     return `<time datetime="${escapeHtml(timestamp)}">${connectionDate.format(new Date(timestamp))}</time>`;
 }
 
+function releaseNotes(news) {
+    return `<ul class="release-notes">${news.map(note => `<li>${escapeHtml(note)}</li>`).join("")}</ul>`;
+}
+
+function releaseHistory(releases) {
+    return releases.map(release => `<div><h4>${escapeHtml(release.version)}</h4>${releaseNotes(release.news)}</div>`).join("");
+}
+
 export function askMaintenanceCode() {
     const content = sheet("Maintenance", `<form class="stack">
         ${field("Code de maintenance", '<input name="code" type="password" inputmode="numeric" required autocomplete="off">')}
@@ -51,18 +59,26 @@ export async function openMaintenance({ accountsOpen = false, dataOpen = false }
                 ${icon("right")}
             </button>
         </li>`).join("");
+        const updateStatus = info.pending
+            ? `${escapeHtml(info.pending_version || info.pending.slice(0, 12))} prête. Arrêtez et relancez Planneli pour l’appliquer.`
+            : info.can_update ? "Vérifiez les versions publiées sur GitHub." : "Mise à jour disponible en mode normal.";
         const content = sheet("Maintenance", `<div class="stack-lg">
             <section class="info-block stack">
                 <h3>Mise à jour</h3>
-                <p class="muted small">Les sources viennent de GitHub. La configuration et les données restent sur cet ordinateur.</p>
+                <p class="version-label">Version installée · <strong>${escapeHtml(info.version || "Inconnue")}</strong></p>
                 <form class="stack">
-                    <p class="muted small" data-update-status>${info.pending
-                        ? `Révision ${escapeHtml(info.pending.slice(0, 12))} prête. Arrêtez et relancez start.py pour l’appliquer.`
-                        : info.can_update ? "Source · lukecoulon2-stack/npv2" : "Mise à jour disponible en mode normal."}</p>
+                    ${info.version_error ? `<p class="error" role="alert">${escapeHtml(info.version_error)}</p>` : ""}
+                    <p class="muted small" role="status" data-update-status ${info.version_error ? "hidden" : ""}>${updateStatus}</p>
                     ${formError}
                     <div><button type="submit" class="button primary" ${info.can_update && !info.pending ? "" : "disabled"}>
-                        Mise à jour</button></div>
+                        Vérifier les mises à jour</button></div>
                 </form>
+                ${info.pending_releases.length ? `<div class="release-history stack">
+                    <h3>Nouveautés à installer</h3>${releaseHistory(info.pending_releases)}</div>` : ""}
+                ${info.releases.length ? `<details class="release-history">
+                    <summary>Journal des mises à jour</summary>
+                    <div class="stack">${releaseHistory(info.releases)}</div>
+                </details>` : ""}
             </section>
             <details class="info-block" data-raw><summary>Données brutes</summary>
                 <pre class="raw-data" aria-live="polite"></pre>
@@ -112,13 +128,13 @@ export async function openMaintenance({ accountsOpen = false, dataOpen = false }
         }
         const status = content.querySelector("[data-update-status]");
         submitForm(form, async () => {
-            status.textContent = "Récupération des sources GitHub…";
+            status.textContent = "Vérification de la version sur GitHub…";
             try {
                 const { revision } = await api("/maintenance/update", "POST");
                 if (revision && activeSheet(content)) await openMaintenance();
-                else status.textContent = "Les sources sont déjà à jour.";
+                else status.textContent = "Aucune version plus récente sur GitHub.";
             } catch (error) {
-                status.textContent = "Aucune source installée.";
+                status.textContent = "";
                 if (error.status === 401 && activeSheet(content)) askMaintenanceCode();
                 else throw error;
             }
@@ -218,9 +234,10 @@ async function openMaintenanceAccount(id) {
 }
 
 export function showWelcome() {
-    const content = sheet("Bienvenue sur la version 2.0 du site", `<div class="stack">
-        <p>Mis à jour le <time datetime="2026-11-23">23/11/2026</time>.</p>
-        <p class="version-label">${icon("check")} Version actuelle · <strong>2.1.63</strong></p>
+    const release = JSON.parse(document.body.dataset.release ?? "null");
+    const content = sheet("Bienvenue", `<div class="stack">
+        ${release ? `<p class="version-label">${icon("check")} Version actuelle · <strong>${escapeHtml(release.version)}</strong></p>
+            ${releaseNotes(release.news)}` : ""}
         <div class="sheet-actions"><button type="button" class="button primary" data-continue>Continuer</button></div>
     </div>`);
     content.querySelector("[data-continue]").onclick = closeSheet;

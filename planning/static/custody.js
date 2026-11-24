@@ -1,10 +1,12 @@
 import { capitalize, formatDate, parentMarks, parents, renderCalendar, WEEKDAYS } from "./calendar.js";
 import {
     activeSheet, api, closeSheet, colorDot, confirmDelete, empty, errorBlock, escapeHtml, field,
-    formError, icon, input, pageHeading, safeColor, sheet, submitForm, textarea, toast,
+    formError, icon, input, pageHeading, safeColor, sheet, styleDropdown, submitForm, textarea, toast,
 } from "./ui.js";
 
 const dateAttributes = 'type="date" min="0001-01-01" max="9999-12-31" required';
+const parentKeys = ["a", "b"];
+const planningSettingsUrl = "/reglages?section=parents";
 
 function parentLegend(list) {
     const marks = parentMarks(list);
@@ -27,7 +29,10 @@ export function renderPlanning(host, session, position, onSetup) {
     }
     host.innerHTML = pageHeading(
         "Mon planning", "calendar", "tone-planning",
-        `<button type="button" class="button primary" data-period>${icon("swap")} Modifier une période</button>`,
+        `<div class="flow planning-actions">
+            <a class="button secondary" href="${planningSettingsUrl}" data-route="/reglages">${icon("settings")} Réglages</a>
+            <button type="button" class="button primary" data-period>${icon("swap")} Modifier une période</button>
+        </div>`,
     ) + '<div class="calendar-host"></div>';
     const list = parents(settings);
     const calendar = renderCalendar(host.querySelector(".calendar-host"), "planning", position, {
@@ -42,49 +47,87 @@ export function renderPlanning(host, session, position, onSetup) {
     };
 }
 
-export function openParentSettings(session, onSave) {
+function parentSettingsForm(session, listId) {
     const settings = session.settings;
     const list = settings ? parents(settings) : [
         { name: "", color: "#9368db" },
         { name: "", color: "#5c9bbb" },
     ];
     const names = list.map((parent, index) => {
-        const key = index === 0 ? "a" : "b";
-        return `<div class="name-and-color">
-            ${field(`Parent ${index + 1}`, input(`name_${key}`, parent.name, 'required maxlength="50" autocomplete="off"'))}
-            ${field("Couleur", input(`color_${key}`, safeColor(parent.color), 'type="color" required'))}
-        </div>`;
+        const key = parentKeys[index];
+        return `<fieldset class="planning-parent-editor" data-parent-accent="${key}" style="--parent-accent:${safeColor(parent.color)}">
+            <legend>Parent ${index + 1}</legend>
+            <div class="name-and-color">
+                ${field("Nom", input(`name_${key}`, parent.name, 'required maxlength="50" autocomplete="off"'))}
+                ${field("Couleur", input(`color_${key}`, safeColor(parent.color), 'type="color" required'))}
+            </div>
+        </fieldset>`;
     }).join("");
-    const content = sheet(settings ? "Modifier les parents" : "Configurer le planning", `<form class="stack">
-        ${names}
+    const rotation = settings ? [settings.first_parent - 1, 2 - settings.first_parent].map((index, position) => {
+        const key = parentKeys[index];
+        return `<li data-parent-accent="${key}" style="--parent-accent:${safeColor(list[index].color)}">
+            <span>${position ? "Semaine suivante" : "Semaine de départ"}</span>
+            <strong data-parent-name="${key}">${escapeHtml(list[index].name)}</strong>
+        </li>`;
+    }).join("") : "";
+    return `<form class="stack planning-form">
+        ${settings ? `<section class="planning-reference stack">
+            <div><h3>Rotation de référence</h3>
+                <p class="muted small">Une semaine par parent à partir du <time datetime="${settings.anchor}">${formatDate(settings.anchor, {
+                    day: "numeric", month: "long", year: "numeric",
+                })}</time>.</p>
+            </div>
+            <ol class="planning-rotation">${rotation}</ol>
+        </section>` : ""}
+        <div class="planning-parent-grid">${names}</div>
         ${settings ? "" : `<div class="fields-two">
             ${field("Semaine de référence", input("anchor", session.today, dateAttributes))}
             ${field("Parent qui commence", '<select name="first_parent"><option value="1">Parent 1</option><option value="2">Parent 2</option></select>')}
         </div>
         <p class="muted small">Le planning démarre le lundi de la semaine choisie.</p>`}
-        ${field("Fuseau horaire", input("timezone", session.timezone || "Europe/Paris", 'list="timezones" maxlength="80" required autocomplete="off"'))}
-        <datalist id="timezones">
+        ${field("Fuseau horaire", input("timezone", settings?.timezone || session.timezone || "Europe/Paris",
+            `list="${listId}" maxlength="80" required autocomplete="off"`))}
+        <datalist id="${listId}">
             <option value="Europe/Paris"><option value="Europe/Brussels"><option value="Europe/Zurich">
             <option value="America/Montreal"><option value="America/Guadeloupe"><option value="Indian/Reunion">
             <option value="UTC">
         </datalist>
         ${formError}
-        <div class="sheet-actions"><button type="submit" class="button primary">${settings ? "Enregistrer" : "Créer le planning"}</button></div>
-    </form>`, settings ? "" : "Renseignez les deux parents pour démarrer l’alternance.");
-    const form = content.querySelector("form");
-    if (!settings) {
-        const select = form.elements.first_parent;
-        for (const [index, name] of [form.elements.name_a, form.elements.name_b].entries()) {
-            name.addEventListener("input", () => {
-                select.options[index].textContent = name.value.trim() || `Parent ${index + 1}`;
-            });
-        }
+        <div class="planning-save"><button type="submit" class="button primary">${settings ? "Enregistrer" : "Créer le planning"}</button></div>
+    </form>`;
+}
+
+function bindParentSettings(form, session, onSave) {
+    const { settings } = session;
+    const { first_parent: select } = form.elements;
+    if (select) styleDropdown(select);
+    for (const [index, key] of parentKeys.entries()) {
+        const name = form.elements[`name_${key}`];
+        const color = form.elements[`color_${key}`];
+        const previewName = form.querySelector(`[data-parent-name="${key}"]`);
+        const accents = form.querySelectorAll(`[data-parent-accent="${key}"]`);
+        name.addEventListener("input", () => {
+            const label = name.value.trim() || `Parent ${index + 1}`;
+            if (select) select.options[index].textContent = label;
+            if (previewName) previewName.textContent = label;
+        });
+        color.addEventListener("input", () => {
+            accents.forEach(item => item.style.setProperty("--parent-accent", safeColor(color.value)));
+        });
     }
     submitForm(form, async data => {
         if (!settings) data.first_parent = Number(data.first_parent);
         await api("/settings", settings ? "PUT" : "POST", data);
-        if (activeSheet(content)) closeSheet();
         toast(settings ? "Réglages enregistrés." : "Planning configuré.");
+        await onSave();
+    });
+}
+
+export function openParentSettings(session, onSave) {
+    const content = sheet(session.settings ? "Modifier les parents" : "Configurer le planning",
+        parentSettingsForm(session, "sheet-timezones"));
+    bindParentSettings(content.querySelector("form"), session, async () => {
+        if (activeSheet(content)) closeSheet();
         await onSave();
     });
 }
@@ -268,73 +311,108 @@ function editDayNote(day, settings, note, onCancel, onDone) {
 }
 
 export function renderPlanningSettings(host, session, page, onUpdate) {
+    if (page === "parents") {
+        host.innerHTML = parentSettingsForm(session, "planning-timezones");
+        bindParentSettings(host.querySelector("form"), session, onUpdate);
+        return;
+    }
     if (!session.settings) {
-        host.innerHTML = `<p class="muted">Renseignez les parents et la semaine de référence pour configurer le planning.</p>
-            <div><button type="button" class="button primary" data-setup>Configurer le planning</button></div>`;
-        host.querySelector("[data-setup]").onclick = () => openParentSettings(session, onUpdate);
+        host.innerHTML = `<div class="planning-empty stack">
+            <p class="muted">Configurez l’alternance pour accéder à ce réglage.</p>
+            <div><a class="button primary" href="${planningSettingsUrl}" data-route="/reglages">Configurer l’alternance</a></div>
+        </div>`;
         return;
     }
+    host.innerHTML = '<p class="muted" role="status">Chargement…</p>';
     if (page === "weekends") {
-        host.innerHTML = '<p class="muted" role="status">Chargement…</p>';
         loadWeekends(host, Number(session.today.slice(0, 4)));
-        return;
-    }
-    if (page === "gardes") {
-        host.innerHTML = '<p class="muted" role="status">Chargement…</p>';
+    } else {
         loadCarers(host);
-        return;
     }
+}
 
-    const settings = session.settings;
-    const list = parents(settings);
-    host.innerHTML = `<div class="settings-parents">
-        ${list.map(item => `<div class="settings-parent">${colorDot(item.color)}<strong>${escapeHtml(item.name)}</strong></div>`).join("")}
-    </div>
-    <dl class="settings-facts">
-        <div><dt>Semaine de référence</dt><dd><time datetime="${settings.anchor}">${formatDate(settings.anchor, { day: "numeric", month: "long", year: "numeric" })}</time></dd></div>
-        <div><dt>Premier parent</dt><dd>${escapeHtml(list[settings.first_parent - 1].name)}</dd></div>
-        <div><dt>Fuseau horaire</dt><dd>${escapeHtml(settings.timezone)}</dd></div>
-    </dl>
-    <div><button type="button" class="button primary" data-parents>${icon("edit")} Modifier les parents</button></div>`;
-    host.querySelector("[data-parents]").onclick = () => openParentSettings(session, onUpdate);
+function planningSwitch(name, label, description, checked = false) {
+    return `<label class="planning-switch">
+        <span><strong>${label}</strong><small id="planning-${name}-hint">${description}</small></span>
+        <input type="checkbox" name="${name}" role="switch" aria-label="${label}" aria-describedby="planning-${name}-hint" ${checked ? "checked" : ""}>
+        <span class="planning-switch-track" aria-hidden="true"></span>
+    </label>`;
 }
 
 async function loadWeekends(section, year) {
     try {
         const years = await api("/weekends");
         if (!section.isConnected) return;
-        section.innerHTML = `<p class="muted">Inverse l’alternance des samedis et dimanches de l’année choisie. Les attributions manuelles restent prioritaires.</p>
-            <form class="stack">
-                <div class="flow weekend-fields">
-                    ${field("Année", input("year", year, 'type="number" min="1" max="9999" step="1" required'))}
-                    <label class="check-line"><input name="enabled" type="checkbox"> Inverser les week-ends</label>
-                </div>
+        section.innerHTML = `<form class="stack planning-form">
+                <fieldset class="stack" data-weekend-controls>
+                    <div class="planning-year">
+                        <button class="icon-button" type="button" data-step="-1" aria-label="Année précédente">${icon("left")}</button>
+                        ${field("Année", input("year", year, 'type="number" min="1" max="9999" step="1" inputmode="numeric" required'))}
+                        <button class="icon-button" type="button" data-step="1" aria-label="Année suivante">${icon("right")}</button>
+                    </div>
+                    ${planningSwitch("enabled", "Inverser les week-ends",
+                        "Échange les samedis et dimanches entre les parents. Les attributions manuelles sont prioritaires.")}
+                    <div class="planning-year-shortcuts stack" data-years hidden>
+                        <p class="muted small">Années avec inversion</p>
+                        <div class="flow" data-year-buttons></div>
+                    </div>
+                </fieldset>
                 ${formError}
-                <div><button type="submit" class="button primary">Enregistrer l’inversion</button></div>
-            </form>
-            <p class="muted small" data-years></p>`;
+                <div class="planning-save"><button type="submit" class="button primary">Enregistrer</button></div>
+            </form>`;
         const form = section.querySelector("form");
         const selected = form.elements.year;
         const checkbox = form.elements.enabled;
-        function display() {
-            const value = Number(selected.value);
+        const controls = form.querySelector("[data-weekend-controls]");
+        const yearGroup = form.querySelector("[data-years]");
+        const shortcuts = form.querySelector("[data-year-buttons]");
+        const steps = [...form.querySelectorAll("[data-step]")];
+
+        function display(value = selected.valueAsNumber) {
+            const valid = selected.validity.valid;
             checkbox.checked = years.includes(value);
-            checkbox.disabled = value < 1 || value > 9999 || !Number.isInteger(value);
-            section.querySelector("[data-years]").textContent = years.length
-                ? `Années inversées · ${years.join(", ")}` : "Aucune année inversée.";
+            checkbox.disabled = !valid;
+            steps[0].disabled = !valid || value <= 1;
+            steps[1].disabled = !valid || value >= 9999;
+            for (const button of shortcuts.children) {
+                button.setAttribute("aria-pressed", String(Number(button.value) === value));
+            }
         }
-        selected.addEventListener("input", display);
+
+        function showYears() {
+            yearGroup.hidden = !years.length;
+            shortcuts.innerHTML = years.map(value => `<button type="button" class="planning-year-chip" value="${value}">${value}</button>`).join("");
+        }
+
+        function selectYear(value) {
+            selected.value = value;
+            display();
+        }
+
+        for (const button of steps) button.onclick = () => selectYear(selected.valueAsNumber + Number(button.dataset.step));
+        shortcuts.onclick = event => {
+            const shortcut = event.target.closest("button");
+            if (shortcut) selectYear(Number(shortcut.value));
+        };
+        selected.addEventListener("input", () => display());
+        showYears();
         display();
         submitForm(form, async data => {
             const value = Number(data.year);
-            const enabled = checkbox.checked;
-            await api(`/weekends/${value}`, "PUT", { enabled });
-            const index = years.indexOf(value);
-            if (enabled && index < 0) years.push(value);
-            else if (!enabled && index >= 0) years.splice(index, 1);
-            years.sort((a, b) => a - b);
-            display();
-            toast("Réglage des week-ends enregistré.");
+            const enabled = data.enabled === "on";
+            controls.disabled = true;
+            try {
+                await api(`/weekends/${value}`, "PUT", { enabled });
+                const index = years.indexOf(value);
+                if (enabled && index < 0) years.push(value);
+                else if (!enabled && index >= 0) years.splice(index, 1);
+                years.sort((a, b) => a - b);
+                showYears();
+                display(value);
+                toast("Réglage des week-ends enregistré.");
+            } finally {
+                controls.disabled = false;
+            }
         });
     } catch (error) {
         section.innerHTML = `${errorBlock(error)}<div><button type="button" class="button secondary">Réessayer</button></div>`;
@@ -346,11 +424,28 @@ async function loadCarers(section) {
     try {
         const carers = await api("/carers");
         if (!section.isConnected) return;
-        section.innerHTML = `${carers.length ? `<div class="row-list">${carers.map(carer => `<button type="button" class="record-row" data-carer="${carer.id}">
-                ${icon("user")}<span class="row-copy"><strong>${escapeHtml(carer.name)}</strong>
-                <span class="small muted">${carer.days.map(day => WEEKDAYS[day]).join(", ")}${carer.active ? "" : " · Suspendue"}</span></span>
-                ${icon("right")}</button>`).join("")}</div>` : '<p class="muted">Aucune garde récurrente.</p>'}
-            <div><button type="button" class="button primary" data-new-carer>${icon("plus")} Ajouter une personne</button></div>`;
+        const add = `<button type="button" class="button primary" data-new-carer>${icon("plus")} Ajouter une personne</button>`;
+        section.innerHTML = carers.length ? `<div class="planning-carer-toolbar">${add}</div>
+            <div class="planning-carers">${carers.map(carer => {
+                const state = carer.active ? "Active" : "Suspendue";
+                const days = carer.days.map(day => WEEKDAYS[day]).join(", ");
+                return `<button type="button" class="planning-carer" data-carer="${carer.id}"
+                    aria-label="${escapeHtml(`Modifier ${carer.name} · ${state} · ${days}`)}">
+                    <span class="planning-carer-heading">
+                        <span class="planning-carer-icon">${icon("user")}</span>
+                        <span class="row-copy"><strong>${escapeHtml(carer.name)}</strong>
+                            <span class="planning-carer-state" ${carer.active ? "data-active" : ""}>${state}</span>
+                        </span>
+                        ${icon("right")}
+                    </span>
+                    <span class="planning-days" aria-hidden="true">${WEEKDAYS.map((day, index) =>
+                        `<span ${carer.days.includes(index) ? "data-selected" : ""} title="${day}">${day.slice(0, 3)}</span>`).join("")}</span>
+                </button>`;
+            }).join("")}</div>` : `<div class="planning-empty stack">
+                <span class="planning-carer-icon">${icon("user")}</span>
+                <div><h3>Aucune garde récurrente</h3><p class="muted">Ajoutez une personne et choisissez ses jours de garde.</p></div>
+                <div>${add}</div>
+            </div>`;
         const redraw = () => loadCarers(section);
         section.querySelector("[data-new-carer]").onclick = () => editCarer(null, redraw);
         section.querySelectorAll("[data-carer]").forEach(button => {
@@ -363,13 +458,14 @@ async function loadCarers(section) {
 }
 
 function editCarer(carer, refresh) {
-    const content = sheet(carer ? "Modifier la personne de garde" : "Ajouter une personne de garde", `<form class="stack">
+    const content = sheet(carer ? "Modifier la personne de garde" : "Ajouter une personne de garde", `<form class="stack planning-form">
         ${field("Nom", input("name", carer?.name, 'required maxlength="80"'))}
-        <fieldset><legend>Jours de garde</legend><div class="flow">
-            ${WEEKDAYS.map((name, index) => `<label class="day-choice"><input name="days" type="checkbox" value="${index}"
-                ${carer?.days.includes(index) ? "checked" : ""}> ${name}</label>`).join("")}
+        <fieldset><legend>Jours de garde</legend><div class="planning-days planning-day-picker">
+            ${WEEKDAYS.map((name, index) => `<label title="${name}">
+                <input name="days" type="checkbox" value="${index}" aria-label="${name}" ${carer?.days.includes(index) ? "checked" : ""}>
+                <span aria-hidden="true">${name.slice(0, 3)}</span></label>`).join("")}
         </div></fieldset>
-        <label class="check-line"><input name="active" type="checkbox" ${carer && !carer.active ? "" : "checked"}> Garde active</label>
+        ${planningSwitch("active", "Afficher dans le planning", "Désactivez ce réglage pour suspendre la garde.", carer?.active ?? true)}
         ${formError}
         <div class="sheet-actions">
             ${carer ? '<button type="button" class="button danger" data-delete>Supprimer</button>' : ""}

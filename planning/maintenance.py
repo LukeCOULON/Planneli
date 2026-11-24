@@ -12,7 +12,7 @@ from .accounts import MAINTENANCE_COOKIE as ACCESS_COOKIE, account_transaction, 
 from .config import PROJECT
 from .database import WORKSPACE_TABLES
 from .rules import InputError
-from .updates import REPOSITORY, fetch_release, pending_revision
+from .updates import REPOSITORY, fetch_release, pending_journal, pending_revision, read_version, version_number
 from .visits import DEVICE_COOKIE
 
 
@@ -109,12 +109,28 @@ def maintenance_routes(database, mode, json_input):
                    FROM accounts LEFT JOIN visitors ON visitors.account_id = accounts.id
                    GROUP BY accounts.id ORDER BY username_key"""
             ).fetchall()
+        pending = pending_revision(PROJECT)
+        installed, staged, version_error = None, None, None
+        try:
+            installed = read_version(PROJECT, optional=True)
+            if pending:
+                staged = pending_journal(PROJECT)
+        except ValueError as error:
+            version_error = str(error)
+        installed_number = version_number(installed["version"]) if installed else ()
         return {
             "logs": [dict(row) for row in logs],
             "accounts": [dict(row) for row in accounts],
             "repository": REPOSITORY,
-            "pending": pending_revision(PROJECT),
-            "can_update": mode == "normal",
+            "pending": pending,
+            "version": installed["version"] if installed else None,
+            "releases": installed["releases"] if installed else [],
+            "pending_version": staged["version"] if staged else None,
+            "pending_releases": [
+                release for release in staged["releases"] if version_number(release["version"]) > installed_number
+            ] if staged else [],
+            "version_error": version_error,
+            "can_update": mode == "normal" and version_error is None,
         }
 
     @blueprint.get("/accounts/<int:account_id>")

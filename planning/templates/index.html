@@ -13,6 +13,7 @@
     <script type="module" src="{{ url_for('static', filename='app.js' if active else 'accounts.js') }}"></script>
 </head>
 <body data-mode="{{ mode }}" data-welcome="{{ 'yes' if welcome else 'no' }}"
+      {% if release %}data-release='{{ release | tojson }}'{% endif %}
       data-site-name="{{ site_name }}" data-default-site-name="{{ default_site_name }}"{% if account %} data-account="{{ account }}"{% endif %}>
     <svg xmlns="http://www.w3.org/2000/svg" class="symbols" aria-hidden="true">
         <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 5 5"/></symbol>

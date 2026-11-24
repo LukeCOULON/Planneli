@@ -1,0 +1,15 @@
+{
+  "version": "v0.2.12",
+  "releases": [
+    {
+      "version": "v0.2.12",
+      "news": [
+        "Début du journal de mise à jour."
+      ]
+    }
+  ],
+  "pending": [
+    "La distribution de Planneli contient un guide d’installation immédiat et les fichiers nécessaires à son utilisation.",
+    "Les réglages du planning proposent un aperçu de l’alternance, une sélection plus simple des années et des jours de garde, ainsi qu’un accès direct depuis le calendrier."
+  ]
+}

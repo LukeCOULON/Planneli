@@ -12,7 +12,7 @@ from .accounts import (
     current_account, find_account, has_session, login_digest, shared_workspace_id,
 )
 from .activity import PAGES, log_activity
-from .config import ROUTER_CONFIG, SITE_NAME
+from .config import PROJECT, ROUTER_CONFIG, SITE_NAME
 from .course_storage import CourseStorageError
 from .database import transaction
 from .library import PHOTO_REQUEST_LIMIT, library_routes
@@ -23,6 +23,7 @@ from .rules import (
     color_value, dates_between, event_fields, now_iso, parent_value,
     refresh_reminder_times, settings_fields, settings_row, text_value, timezone_for, timezone_value,
 )
+from .updates import read_version
 from .visits import record_visit, set_device_cookie
 
 
@@ -72,6 +73,12 @@ def note_fields(data):
 def create_app(database, mode, *, router_config=ROUTER_CONFIG):
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = 256 * 1024
+    try:
+        journal = read_version(PROJECT, optional=True)
+    except ValueError as error:
+        app.logger.warning("%s", error)
+        journal = None
+    release = journal["releases"][0] if journal else None
 
     app.register_blueprint(account_routes(database, json_input, router_config))
     app.register_blueprint(organizer_routes(database))
@@ -172,7 +179,7 @@ def create_app(database, mode, *, router_config=ROUTER_CONFIG):
         response = make_response(render_template(
             "index.html", mode=mode, welcome=welcome, account=account_context(account) if account else None,
             active=active, site_name=site_name, default_site_name=SITE_NAME, invitation=invitation,
-            invitation_code=code, invitation_error=invitation_error,
+            invitation_code=code, invitation_error=invitation_error, release=release,
         ), invitation_error.status if invitation_error else 200)
         response.headers["Cache-Control"] = "no-store"
         set_device_cookie(response, device)
