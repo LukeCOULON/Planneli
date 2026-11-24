@@ -44,6 +44,15 @@ def maintenance_routes(database, mode, json_input):
     signer = URLSafeTimedSerializer(secrets.token_urlsafe(32), salt=ACCESS_COOKIE)
     code = os.environ.get("NAONING_MAINTENANCE_CODE")
     if not code:
+        local_code = database.parent / "maintenance-code.txt"
+        try:
+            code = local_code.read_text(encoding="utf-8").strip()
+        except FileNotFoundError:
+            pass
+        else:
+            if len(code) != 8 or not code.isascii() or not code.isdecimal():
+                raise ValueError("Le fichier maintenance-code.txt doit contenir un code à 8 chiffres.")
+    if not code:
         code = f"{secrets.randbelow(10**8):08d}"
         print(f"Code de maintenance · {code}", flush=True)
     pin = code.encode("utf-8")
