@@ -38,3 +38,9 @@ Difficulté : <Facile, Intermédiaire ou Difficile>
 
 > [!EXERCICE]
 > <Consigne à résoudre.>
+
+> [!QUIZ] <Question de révision>
+> <Indice ou propositions facultatives.>
+>
+> > [!CORRECTION]
+> > <Réponse et explication.>

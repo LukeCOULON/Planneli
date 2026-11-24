@@ -180,6 +180,13 @@ MIGRATIONS = (
         "ALTER TABLE visitors ADD COLUMN account_id INTEGER REFERENCES accounts(id)",
         "CREATE INDEX visitors_by_account ON visitors(account_id)",
     ),
+    (
+        "ALTER TABLE workspaces ADD COLUMN read_only_code TEXT",
+        "CREATE UNIQUE INDEX workspaces_read_only_code ON workspaces(read_only_code)",
+        "ALTER TABLE accounts ADD COLUMN read_only INTEGER NOT NULL DEFAULT 0 CHECK (read_only IN (0, 1))",
+    ),
+    ("ALTER TABLE accounts ADD COLUMN home_preferences TEXT",),
+    ("ALTER TABLE accounts ADD COLUMN onboarding_pending INTEGER NOT NULL DEFAULT 0 CHECK (onboarding_pending IN (0, 1))",),
 )
 
 

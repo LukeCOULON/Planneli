@@ -1,0 +1,9 @@
+{
+    "port": 8765,
+    "auto_port": true,
+    "open_browser": true,
+    "homepage": "about:blank",
+    "jpeg_quality": 60,
+    "navigation_timeout_ms": 30000,
+    "fps": 30
+}

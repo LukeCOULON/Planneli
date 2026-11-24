@@ -1,25 +1,30 @@
-import { capitalize, formatDate, todayIn } from "./calendar.js";
+import { todayIn } from "./calendar.js";
 import { renderGames } from "./minigames.js";
 import { renderCourses } from "./courses.js";
 import { openParentSettings, renderPlanning } from "./custody.js";
+import { openHomeOnboarding, renderHomeApps } from "./home-apps.js";
+import { renderToday } from "./home.js";
 import { renderEvents, renderNotes } from "./records.js";
 import { showWelcome } from "./maintenance.js";
+import { renderNavUnit } from "./nav-unit.js";
 import { startReminders } from "./reminders.js";
 import { openSearch } from "./organizer.js";
 import { renderSettings } from "./settings.js";
 import { renderTasks } from "./tasks.js";
-import { api, closeSheet, empty, errorBlock, icon } from "./ui.js";
+import { api, closeSheet, empty, errorBlock } from "./ui.js";
 
 const main = document.querySelector("#main");
 const page = document.querySelector("#page");
 const home = page.cloneNode(true);
 const builtInZone = "Europe/Paris";
 const siteName = document.body.dataset.siteName;
+const readOnly = document.body.dataset.readOnly === "yes";
 let session = { settings: null, today: todayIn(builtInZone) };
 let sessionError;
 let ready = false;
 let current = location.pathname;
 let visit = 0;
+let onboardingShown = false;
 
 const positions = {
     "/planning": { day: null, view: "month" },
@@ -33,6 +38,7 @@ const titles = {
     "/a-faire": "À faire",
     "/cours": "Cours",
     "/jeux": "Mini-jeux",
+    "/navigateur": "Navigateur intégré",
     "/reglages": "Réglages",
 };
 
@@ -45,22 +51,15 @@ function updateNavigation() {
 }
 
 function updateHome() {
-    const date = page.querySelector("#hero-date");
-    if (!date) return;
-    date.innerHTML = `${icon("calendar")}<span>${capitalize(formatDate(session.today, {
-        weekday: "long", day: "numeric", month: "long",
-    }))}</span>`;
-    date.hidden = false;
-    const setup = page.querySelector("#home-setup");
-    setup.innerHTML = ready && !session.settings
-        ? `<button type="button" class="button secondary setup-link">${icon("settings")} Configurer le planning</button>`
-        : "";
-    const trigger = setup.querySelector("button");
-    if (trigger) trigger.onclick = setupPlanning;
-    if (sessionError) setup.innerHTML = `${errorBlock(sessionError)}
-        <button class="button secondary" type="button" data-retry-session>Réessayer</button>`;
-    const retry = setup.querySelector("[data-retry-session]");
-    if (retry) retry.onclick = connect;
+    const summary = page.querySelector("#home-today");
+    if (sessionError) {
+        summary.innerHTML = `<div class="today-feedback">${errorBlock(sessionError)}
+            <button class="button secondary" type="button">Réessayer</button></div>`;
+        summary.querySelector("button").onclick = connect;
+    } else if (ready) {
+        renderHomeApps(page.querySelector("#home-apps"), session.home);
+        void renderToday(summary, page.querySelector("#hero-date"), setupPlanning, session.home.hidden);
+    }
 }
 
 async function setupPlanning() {
@@ -72,7 +71,11 @@ async function setupPlanning() {
 }
 
 async function loadSession() {
+    const previousView = session.home?.agenda_view;
     session = await api("/session");
+    const agenda = positions["/evenements"];
+    const preferredView = session.home?.agenda_view;
+    if (preferredView && (!agenda.day || (previousView && previousView !== preferredView))) agenda.view = preferredView;
     sessionError = undefined;
     ready = true;
 }
@@ -80,6 +83,17 @@ async function loadSession() {
 function selectedRecord(key) {
     const value = Number(new URL(location.href).searchParams.get(key));
     return Number.isSafeInteger(value) && value > 0 ? value : null;
+}
+
+function applyCalendarDay(url) {
+    const position = positions[url.pathname];
+    const day = url.searchParams.get("day");
+    if (!position || !/^\d{4}-\d{2}-\d{2}$/.test(day) || day < "0001-01-01") return;
+    const date = new Date(`${day}T00:00:00Z`);
+    if (!Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === day) {
+        position.day = day;
+        position.view = "week";
+    }
 }
 
 function render() {
@@ -122,6 +136,8 @@ function render() {
         renderCourses(view, selectedRecord("course"));
     } else if (current === "/jeux") {
         renderGames(view, new URLSearchParams(location.search).get("jeu"));
+    } else if (current === "/navigateur") {
+        renderNavUnit(view);
     } else if (current === "/reglages") {
         renderSettings(view, session, new URLSearchParams(location.search).get("section"), async () => {
             await loadSession();
@@ -139,6 +155,17 @@ async function connect() {
         sessionError = error;
     }
     render();
+    if (!onboardingShown && session.home?.needs_setup) {
+        onboardingShown = true;
+        const show = () => openHomeOnboarding(session.home, async () => {
+            await loadSession();
+            if (current === "/") render();
+            else await move("/");
+        });
+        const dialog = document.querySelector("#sheet");
+        if (dialog.open) dialog.addEventListener("close", show, { once: true });
+        else show();
+    }
 }
 
 function motionEnabled() {
@@ -171,7 +198,7 @@ async function move(destination, { card, fromHistory = false } = {}) {
     const target = new URL(destination, location.href);
     const next = target.pathname;
     if (!fromHistory && next === current && target.search === location.search) {
-        if (target.search) { closeSheet(); render(); }
+        if (target.search) { closeSheet(); applyCalendarDay(target); render(); }
         return;
     }
     const ticket = ++visit;
@@ -186,6 +213,7 @@ async function move(destination, { card, fromHistory = false } = {}) {
         return;
     }
     current = next;
+    applyCalendarDay(target);
     render();
     void api("/activity/page", "POST", { path: current }).catch(() => {});
     scrollToTopAndFocus();
@@ -208,13 +236,18 @@ document.addEventListener("click", event => {
     const animated = link.matches(".space-card, .tab-bar a");
     move(link.href, { card: animated ? link : null });
 });
-document.querySelector("[data-search]").onclick = openSearch;
+const searchButton = document.querySelector("[data-search]");
+if (searchButton) searchButton.onclick = openSearch;
 window.addEventListener("popstate", () => move(location.href, { fromHistory: true }));
 window.addEventListener("naoning:data-reset", connect);
+document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && current === "/" && ready) updateHome();
+});
 
+applyCalendarDay(new URL(location.href));
 render();
 connect();
-const entrance = page.querySelector(".space-list");
+const entrance = page.querySelector("#home-apps");
 const landCards = () => entrance?.classList.add("space-list-landing");
 if (document.body.dataset.welcome === "yes") {
     document.querySelector("#sheet").addEventListener("close", landCards, { once: true });
@@ -222,4 +255,4 @@ if (document.body.dataset.welcome === "yes") {
 } else {
     landCards();
 }
-startReminders(id => move(`/evenements?event=${id}`));
+if (!readOnly) startReminders(id => move(`/evenements?event=${id}`));

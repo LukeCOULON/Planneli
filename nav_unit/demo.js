@@ -1,0 +1,9 @@
+'use strict';
+const defaults={width:1280,height:650,full:true};
+const key='nav-unit-demo-size-v1';
+const $=id=>document.getElementById(id);
+function load(){try{const v=JSON.parse(localStorage.getItem(key));if(v&&Number.isInteger(v.width)&&v.width>=320&&v.width<=1920&&Number.isInteger(v.height)&&v.height>=240&&v.height<=1200&&typeof v.full==='boolean')return v;}catch{}return {...defaults};}
+function label(v){return `${v.full?'100 %':v.width+' px'} × ${v.height} px`;}
+function apply(el,v){el.style.width=v.full?'100%':`${v.width}px`;el.style.height=`${v.height}px`;}
+if($('browser-box')){const v=load();apply($('browser-box'),v);$('dimensions').textContent=label(v);$('toggle').onclick=()=>{const box=$('browser-box');box.hidden=!box.hidden;$('toggle').textContent=box.hidden?'Afficher le navigateur':'Masquer le navigateur';$('toggle').setAttribute('aria-expanded',String(!box.hidden));};}
+if($('settings')){const form=$('settings');function fill(v){$('width').value=v.width;$('height').value=v.height;$('full').checked=v.full;preview();}function values(){return {width:Number($('width').value),height:Number($('height').value),full:$('full').checked};}function preview(){ $('width').disabled=$('full').checked;const v=values();if(!form.checkValidity())return;const p=$('preview');p.style.width=v.full?'100%':`${v.width/4}px`;p.style.height=`${v.height/4}px`;$('preview-label').textContent=label(v)+' (aperçu réduit)';}function save(v){try{localStorage.setItem(key,JSON.stringify(v));$('message').textContent='Dimensions enregistrées.';}catch{$('message').textContent='Impossible d’enregistrer les réglages localement.';}}form.addEventListener('input',preview);form.onsubmit=e=>{e.preventDefault();if(form.reportValidity()){const v=values();if(v.full&&(!Number.isInteger(v.width)||v.width<320||v.width>1920))v.width=defaults.width;save(v);}};$('reset').onclick=()=>{fill(defaults);save(defaults);};fill(load());}

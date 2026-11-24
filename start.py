@@ -83,10 +83,12 @@ def serve(config, data_dir):
     from waitress import create_server
 
     from planning.library import PHOTO_REQUEST_LIMIT
+    from planning.nav_unit import NavUnit
     from planning.web import create_app
 
     database = data_dir / DATABASE_NAME
-    app = create_app(database, config.mode)
+    nav_unit = NavUnit(PROJECT)
+    app = create_app(database, config.mode, nav_unit=nav_unit)
     try:
         server = create_server(
             app, host=config.host, port=config.port, ident="Planneli",
@@ -116,6 +118,7 @@ def serve(config, data_dir):
     finally:
         server.task_dispatcher.shutdown()
         server.close()
+        nav_unit.close()
 
 
 def stop_on_signal(_signum, _frame):

@@ -9,22 +9,32 @@ from werkzeug.exceptions import HTTPException
 
 from .accounts import (
     AccountChanged, account_context, account_info, account_routes, account_transaction, connection_code,
-    current_account, find_account, has_session, login_digest, shared_workspace_id,
+    current_account, find_account, find_invitation, has_session, login_digest,
 )
 from .activity import PAGES, log_activity
 from .config import PROJECT, ROUTER_CONFIG, SITE_NAME
 from .course_storage import CourseStorageError
 from .database import transaction
+from .home_apps import home_configuration
 from .library import PHOTO_REQUEST_LIMIT, library_routes
 from .maintenance import maintenance_routes
+from .nav_unit import local_browser_port
 from .organizer import move_to_trash, organizer_routes
 from .rules import (
     CustodyCalendar, InputError, Period, boolean_value, calendar_range, civil_day,
-    color_value, dates_between, event_fields, now_iso, parent_value,
+    color_value, custody_today, dates_between, event_fields, now_iso, parent_value,
     refresh_reminder_times, settings_fields, settings_row, text_value, timezone_for, timezone_value,
 )
 from .updates import read_version
 from .visits import record_visit, set_device_cookie
+
+
+READ_ONLY_METHODS = {
+    "session": {"GET", "HEAD"},
+    "planning": {"GET", "HEAD"},
+    "accounts.leave": {"POST"},
+    "accounts.logout": {"POST"},
+}
 
 
 def json_input():
@@ -70,7 +80,7 @@ def note_fields(data):
     )
 
 
-def create_app(database, mode, *, router_config=ROUTER_CONFIG):
+def create_app(database, mode, *, router_config=ROUTER_CONFIG, nav_unit=None):
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = 256 * 1024
     try:
@@ -103,6 +113,8 @@ def create_app(database, mode, *, router_config=ROUTER_CONFIG):
             expected = request.headers.get("X-Tempo-Account")
             if expected is not None and expected != account_context(g.account):
                 raise AccountChanged("Votre compte ou votre session a changé.", 409)
+            if g.account["read_only"] and request.method not in READ_ONLY_METHODS.get(request.endpoint, ()):
+                raise InputError("Cette invitation donne accès au planning en lecture seule.", 403)
             if request.blueprint != "accounts" and request.endpoint != "session" and not has_session(g.account):
                 raise AccountChanged("Créez ou rejoignez une session pour accéder à Planneli.", 403)
             g.workspace = g.account["workspace_id"]
@@ -116,6 +128,12 @@ def create_app(database, mode, *, router_config=ROUTER_CONFIG):
             "default-src 'self'; style-src 'self' 'unsafe-inline'; object-src 'none'; "
             "base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
         )
+        account = g.get("account")
+        if (
+            response.mimetype == "text/html" and nav_unit and nav_unit.origin and account is not None
+            and has_session(account) and not account["read_only"] and local_browser_port()
+        ):
+            response.headers["Content-Security-Policy"] += f"; frame-src {nav_unit.origin}"
         if request.path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store"
         return response
@@ -155,17 +173,21 @@ def create_app(database, mode, *, router_config=ROUTER_CONFIG):
     @app.get("/a-faire")
     @app.get("/cours")
     @app.get("/jeux")
+    @app.get("/navigateur")
     @app.get("/inscription", defaults={"invitation": True}, endpoint="invitation")
     def index(invitation=False):
         track_visit = request.method == "GET" and "prefetch" not in request.headers.get("Sec-Purpose", "")
         device, welcome = None, False
-        code, invitation_error = None, None
+        code, invitation_error, invitation_read_only = None, None, False
         with transaction(database, write=track_visit) as connection:
             g.account = account = find_account(connection, login_digest())
+            read_only = bool(account and account["read_only"])
+            if read_only and not invitation and request.path != "/planning":
+                return redirect("/planning")
             if invitation:
                 try:
                     code = connection_code(request.args.get("code"))
-                    shared_workspace_id(connection, code)
+                    invitation_read_only = bool(find_invitation(connection, code)["read_only"])
                 except InputError as error:
                     invitation_error = error
             if track_visit:
@@ -177,9 +199,10 @@ def create_app(database, mode, *, router_config=ROUTER_CONFIG):
         )
         g.activity_action = f"Chargement de page · {page}"
         response = make_response(render_template(
-            "index.html", mode=mode, welcome=welcome, account=account_context(account) if account else None,
+            "index.html", mode=mode, welcome=welcome and not read_only, account=account_context(account) if account else None,
             active=active, site_name=site_name, default_site_name=SITE_NAME, invitation=invitation,
-            invitation_code=code, invitation_error=invitation_error, release=release,
+            invitation_code=code, invitation_error=invitation_error, invitation_read_only=invitation_read_only,
+            read_only=read_only, release=release,
         ), invitation_error.status if invitation_error else 200)
         response.headers["Cache-Control"] = "no-store"
         set_device_cookie(response, device)
@@ -201,9 +224,57 @@ def create_app(database, mode, *, router_config=ROUTER_CONFIG):
             settings = settings_row(connection, g.workspace)
             zone = timezone_for(connection, g.workspace, settings)
         today = datetime.now(zone).date()
-        return {
+        info = {
             "account": account_info(g.account), "settings": dict(settings) if settings else None,
             "today": today.isoformat(), "timezone": zone.key,
+        }
+        if not g.account["read_only"]:
+            info["home"] = home_configuration(g.account["home_preferences"])
+            info["home"]["needs_setup"] = bool(g.account["onboarding_pending"])
+        return info
+
+    @app.get("/api/nav-unit")
+    @app.post("/api/nav-unit")
+    def nav_unit_status():
+        port = local_browser_port()
+        if not nav_unit or port is None:
+            return {"state": "unavailable"}
+        return nav_unit.start(port) if request.method == "POST" else nav_unit.status(port)
+
+    @app.get("/api/today")
+    def today_summary():
+        with account_transaction(database) as connection:
+            settings = settings_row(connection, g.workspace)
+            zone = timezone_for(connection, g.workspace, settings)
+            today = datetime.now(zone).date()
+            day = today.isoformat()
+            custody, handoff = None, None
+            if settings is not None:
+                parents = [
+                    {"name": settings[f"name_{key}"], "color": settings[f"color_{key}"]}
+                    for key in ("a", "b")
+                ]
+                current, change = custody_today(connection, g.workspace, today)
+                custody = parents[current - 1]
+                if change is not None:
+                    next_day, next_parent = change
+                    handoff = {"day": next_day.isoformat(), "parent": parents[next_parent - 1]}
+            events = connection.execute(
+                """SELECT id, title, start_time FROM events
+                   WHERE workspace_id = ? AND day = ? AND deleted_at IS NULL
+                   ORDER BY start_time, id LIMIT 3""",
+                (g.workspace, day),
+            ).fetchall()
+            tasks = connection.execute(
+                """SELECT id, title, due FROM tasks
+                   WHERE workspace_id = ? AND due <= ? AND completed_at IS NULL AND deleted_at IS NULL
+                   ORDER BY due = ? DESC, due, id LIMIT 3""",
+                (g.workspace, day, day),
+            ).fetchall()
+        return {
+            "day": day, "custody": custody, "handoff": handoff,
+            "events": [dict(row) for row in events[:2]], "more_events": len(events) > 2,
+            "tasks": [dict(row) for row in tasks[:2]], "more_tasks": len(tasks) > 2,
         }
 
     @app.post("/api/activity/page")
@@ -257,7 +328,7 @@ def create_app(database, mode, *, router_config=ROUTER_CONFIG):
                 (g.workspace,),
             ):
                 carers[row["weekday"]].append(row["name"])
-            counts = dict(connection.execute(
+            counts = {} if g.account["read_only"] else dict(connection.execute(
                 "SELECT day, COUNT(*) FROM day_notes WHERE workspace_id = ? AND day BETWEEN ? AND ? GROUP BY day",
                 (g.workspace, first.isoformat(), last.isoformat()),
             ))

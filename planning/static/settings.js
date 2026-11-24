@@ -1,12 +1,13 @@
 import { renderAccountSettings } from "./accounts.js";
 import { renderPlanningSettings } from "./custody.js";
-import { askMaintenanceCode } from "./maintenance.js";
+import { renderHomePreferences } from "./home-apps.js";
+import { renderMaintenanceSettings } from "./maintenance.js";
 import { openTrash } from "./organizer.js";
 import { escapeHtml, icon } from "./ui.js";
 
 const groups = [
     { title: "Compte", symbol: "user", tone: "tone-planning", pages: [
-        ["session", "Session"], ["profil", "Profil"], ["apparence", "Apparence"],
+        ["session", "Session"], ["profil", "Profil"], ["apparence", "Apparence"], ["accueil", "Accueil", "home"],
     ] },
     { title: "Planning", symbol: "calendar", tone: "tone-events", pages: [
         ["parents", "Alternance", "swap"], ["weekends", "Week-ends", "calendar"], ["gardes", "Gardes", "user"],
@@ -21,10 +22,7 @@ const dataPages = {
         symbol: "trash", label: "Ouvrir la corbeille", action: openTrash,
         description: "Retrouvez les notes, événements, tâches et cours supprimés. Vous pouvez les restaurer ou les effacer définitivement.",
     },
-    maintenance: {
-        symbol: "settings", label: "Ouvrir la maintenance", action: askMaintenanceCode,
-        description: "Consultez les journaux de connexion et gérez les mises à jour ou les données du site. Un code de maintenance est requis.",
-    },
+    maintenance: { symbol: "settings" },
 };
 
 function settingsLink(page) {
@@ -72,10 +70,14 @@ export function renderSettings(host, session, requestedPage, onUpdate) {
     </div>`;
 
     const body = host.querySelector("[data-settings-body]");
-    if (group === groups[0]) {
+    if (page === "accueil") {
+        renderHomePreferences(body, session.home, onUpdate);
+    } else if (group === groups[0]) {
         renderAccountSettings(body, session.account, page);
     } else if (isPlanning) {
         renderPlanningSettings(body, session, page, onUpdate);
+    } else if (page === "maintenance") {
+        renderMaintenanceSettings(body);
     } else {
         const item = dataPages[page];
         body.innerHTML = `<p class="muted">${item.description}</p>

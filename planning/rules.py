@@ -138,6 +138,24 @@ class CustodyCalendar:
         return self.regular_parent(day) if assigned is None else assigned
 
 
+def custody_today(connection, workspace, today):
+    first = today
+    current = None
+    while True:
+        # Read the schedule in small ranges so long runs of exceptions can extend the search.
+        last = date.fromordinal(min(first.toordinal() + 27, date.max.toordinal()))
+        calendar = CustodyCalendar(connection, workspace, first, last)
+        if current is None:
+            current = calendar.parent(today)
+        for day in dates_between(first, last):
+            parent = calendar.parent(day)
+            if parent != current:
+                return current, (day, parent)
+        if last == date.max:
+            return current, None
+        first = last + timedelta(days=1)
+
+
 @dataclass(frozen=True)
 class Period:
     first: date

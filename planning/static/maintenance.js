@@ -18,6 +18,7 @@ const resetActions = {
     },
 };
 const connectionDate = new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "medium" });
+const versionPreparedEvent = "planneli:version-prepared";
 
 function connectionTime(timestamp) {
     return `<time datetime="${escapeHtml(timestamp)}">${connectionDate.format(new Date(timestamp))}</time>`;
@@ -28,7 +29,67 @@ function releaseNotes(news) {
 }
 
 function releaseHistory(releases) {
-    return releases.map(release => `<div><h4>${escapeHtml(release.version)}</h4>${releaseNotes(release.news)}</div>`).join("");
+    return releases.map(release => `<div><p class="release-entry-version"><strong>${escapeHtml(release.version)}</strong></p>
+        ${releaseNotes(release.news)}</div>`).join("");
+}
+
+function versionPanel(info, showUpdateButton = false) {
+    const [latest, ...history] = info.releases;
+    const prepared = info.pending_version ? `${escapeHtml(info.pending_version)} est prête.` : "Une mise à jour est prête.";
+    const status = info.pending
+        ? `${prepared} Relancez Planneli pour l’appliquer.`
+        : "Aucune mise à jour préparée.";
+    return `<section class="maintenance-version stack">
+        <header class="maintenance-version-header">
+            <h3>Version et mises à jour</h3>
+            <p class="maintenance-version-number"><span>Version installée</span><strong>${escapeHtml(info.version ?? "Inconnue")}</strong></p>
+        </header>
+        ${info.version_error ? `<p class="error" role="alert">${escapeHtml(info.version_error)}</p>`
+            : `<p class="maintenance-version-status" ${info.pending ? "data-prepared" : ""}>${icon(info.pending ? "check" : "clock")}<span>${status}</span></p>`}
+        ${info.pending_releases.length ? `<div class="release-history stack">
+            <h4>Nouveautés à installer</h4>${releaseHistory(info.pending_releases)}
+        </div>` : ""}
+        ${latest ? `<div class="release-history stack">
+            <h4>Nouveautés de la version installée</h4>${releaseNotes(latest.news)}
+        </div>` : ""}
+        ${history.length ? `<details class="release-history">
+            <summary>Historique des versions</summary>
+            <div class="stack">${releaseHistory(history)}</div>
+        </details>` : ""}
+        ${showUpdateButton ? `<form class="stack" data-update-form>
+            <p class="muted small" role="status" data-update-status ${info.can_update || info.version_error ? "hidden" : ""}>
+                Vérification GitHub disponible en mode normal.
+            </p>
+            ${formError}
+            <div><button type="submit" class="button primary" ${info.can_update && !info.pending ? "" : "disabled"}>Vérifier les mises à jour</button></div>
+        </form>` : ""}
+    </section>`;
+}
+
+export function renderMaintenanceSettings(host) {
+    host.innerHTML = `<div data-version-preview></div>
+        <div class="stack">
+            <p class="muted small">Déverrouillez la maintenance pour vérifier GitHub, consulter les connexions et gérer les données.</p>
+            <div><button type="button" class="button primary" data-open-maintenance>Ouvrir la maintenance ${icon("right")}</button></div>
+        </div>`;
+    const preview = host.querySelector("[data-version-preview]");
+    async function refresh() {
+        if (!host.isConnected) return;
+        preview.innerHTML = '<p class="muted" role="status">Chargement du journal des versions…</p>';
+        try {
+            const info = await api("/maintenance/version");
+            if (host.isConnected) preview.innerHTML = versionPanel(info);
+        } catch (error) {
+            if (!host.isConnected) return;
+            preview.innerHTML = `${errorBlock(error)}<button type="button" class="button secondary">Réessayer</button>`;
+            preview.querySelector("button").onclick = refresh;
+        }
+    }
+    const view = new AbortController();
+    window.addEventListener(versionPreparedEvent, refresh, { signal: view.signal });
+    host.closest(".page-enter")?.addEventListener("tempo:leave", () => view.abort(), { once: true });
+    host.querySelector("[data-open-maintenance]").onclick = () => openMaintenance();
+    refresh();
 }
 
 export function askMaintenanceCode() {
@@ -59,27 +120,8 @@ export async function openMaintenance({ accountsOpen = false, dataOpen = false }
                 ${icon("right")}
             </button>
         </li>`).join("");
-        const updateStatus = info.pending
-            ? `${escapeHtml(info.pending_version || info.pending.slice(0, 12))} prête. Arrêtez et relancez Planneli pour l’appliquer.`
-            : info.can_update ? "Vérifiez les versions publiées sur GitHub." : "Mise à jour disponible en mode normal.";
         const content = sheet("Maintenance", `<div class="stack-lg">
-            <section class="info-block stack">
-                <h3>Mise à jour</h3>
-                <p class="version-label">Version installée · <strong>${escapeHtml(info.version || "Inconnue")}</strong></p>
-                <form class="stack">
-                    ${info.version_error ? `<p class="error" role="alert">${escapeHtml(info.version_error)}</p>` : ""}
-                    <p class="muted small" role="status" data-update-status ${info.version_error ? "hidden" : ""}>${updateStatus}</p>
-                    ${formError}
-                    <div><button type="submit" class="button primary" ${info.can_update && !info.pending ? "" : "disabled"}>
-                        Vérifier les mises à jour</button></div>
-                </form>
-                ${info.pending_releases.length ? `<div class="release-history stack">
-                    <h3>Nouveautés à installer</h3>${releaseHistory(info.pending_releases)}</div>` : ""}
-                ${info.releases.length ? `<details class="release-history">
-                    <summary>Journal des mises à jour</summary>
-                    <div class="stack">${releaseHistory(info.releases)}</div>
-                </details>` : ""}
-            </section>
+            ${versionPanel(info, true)}
             <details class="info-block" data-raw><summary>Données brutes</summary>
                 <pre class="raw-data" aria-live="polite"></pre>
             </details>
@@ -101,7 +143,7 @@ export async function openMaintenance({ accountsOpen = false, dataOpen = false }
             </section>
             <div><button type="button" class="button secondary" data-lock>Verrouiller</button></div>
         </div>`);
-        const form = content.querySelector("form");
+        const form = content.querySelector("[data-update-form]");
         const showData = () => openMaintenance({ dataOpen: true });
         for (const button of content.querySelectorAll("[data-reset]")) {
             const scope = button.dataset.reset;
@@ -128,13 +170,18 @@ export async function openMaintenance({ accountsOpen = false, dataOpen = false }
         }
         const status = content.querySelector("[data-update-status]");
         submitForm(form, async () => {
+            status.hidden = false;
             status.textContent = "Vérification de la version sur GitHub…";
             try {
                 const { revision } = await api("/maintenance/update", "POST");
-                if (revision && activeSheet(content)) await openMaintenance();
-                else status.textContent = "Aucune version plus récente sur GitHub.";
+                if (revision) {
+                    window.dispatchEvent(new Event(versionPreparedEvent));
+                    if (activeSheet(content)) await openMaintenance();
+                } else {
+                    status.textContent = "Aucune version plus récente sur GitHub.";
+                }
             } catch (error) {
-                status.textContent = "";
+                status.hidden = true;
                 if (error.status === 401 && activeSheet(content)) askMaintenanceCode();
                 else throw error;
             }

@@ -1,4 +1,5 @@
 import hashlib
+import json
 import re
 import secrets
 import time
@@ -13,6 +14,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from .config import SITE_NAME, local_invitation_host, read_router_origin
 from .database import WORKSPACE_TABLES, transaction
+from .home_apps import home_configuration, home_preferences
 from .qrnativegen import QRCode
 from .rules import InputError, text_value
 from .visits import record_visit, set_device_cookie
@@ -58,7 +60,9 @@ def login_digest():
 def find_account(connection, digest):
     return connection.execute(
         """SELECT accounts.id, accounts.username, accounts.own_workspace, accounts.joined_workspace, accounts.site_name,
-                  workspaces.id AS workspace_id, workspaces.share_code, owners.username AS owner
+                  accounts.read_only, accounts.home_preferences, accounts.onboarding_pending, workspaces.id AS workspace_id,
+                  workspaces.share_code, workspaces.read_only_code,
+                  owners.username AS owner
            FROM account_logins JOIN accounts ON accounts.id = account_id
            JOIN workspaces ON workspaces.id = COALESCE(accounts.joined_workspace, accounts.own_workspace)
            LEFT JOIN accounts AS owners ON owners.own_workspace = workspaces.id
@@ -76,7 +80,8 @@ def current_account(database):
 
 
 def account_context(account):
-    return f"{account['id']}:{account['workspace_id']}"
+    context = f"{account['id']}:{account['workspace_id']}"
+    return f"{context}:read-only" if account["read_only"] else context
 
 
 def has_session(account):
@@ -90,11 +95,24 @@ def connection_code(raw):
     return code
 
 
-def shared_workspace_id(connection, code):
-    workspace = connection.execute("SELECT id FROM workspaces WHERE share_code = ?", (code,)).fetchone()
+def find_invitation(connection, code):
+    workspace = connection.execute(
+        """SELECT id, CASE WHEN share_code = ? THEN 0 ELSE 1 END AS read_only
+           FROM workspaces WHERE share_code = ? OR read_only_code = ?""",
+        (code, code, code),
+    ).fetchone()
     if workspace is None:
         raise InputError("Ce code ne correspond à aucune session active.", 404)
-    return workspace["id"]
+    return workspace
+
+
+def new_connection_code(connection):
+    while True:
+        code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(8))
+        if not connection.execute(
+            "SELECT 1 FROM workspaces WHERE share_code = ? OR read_only_code = ?", (code, code),
+        ).fetchone():
+            return code
 
 
 @contextmanager
@@ -116,6 +134,8 @@ def account_info(account):
         "owner": account["owner"],
         "personal": own_workspace,
         "code": account["share_code"] if own_workspace else None,
+        "read_only_code": account["read_only_code"] if own_workspace else None,
+        "read_only": bool(account["read_only"]),
         "session_active": has_session(account),
         "site_name": account["site_name"] or SITE_NAME,
     }
@@ -179,7 +199,7 @@ def account_routes(database, json_input, router_config):
         with transaction(database, write=True) as connection:
             if connection.execute("SELECT 1 FROM accounts WHERE username_key = ?", (key,)).fetchone():
                 raise InputError("Ce nom d’utilisateur est déjà pris.", 409)
-            joined_workspace = shared_workspace_id(connection, code) if code is not None else None
+            invitation = find_invitation(connection, code) if code is not None else None
             # Workspaces are retained after account deletion, so new accounts never reuse an ID.
             account = connection.execute(
                 """INSERT INTO workspaces(id) VALUES ((
@@ -187,9 +207,10 @@ def account_routes(database, json_input, router_config):
                    ))""",
             ).lastrowid
             connection.execute(
-                """INSERT INTO accounts(id, username, username_key, password_hash, own_workspace, joined_workspace)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (account, username, key, password_hash, account, joined_workspace),
+                """INSERT INTO accounts(id, username, username_key, password_hash, own_workspace, joined_workspace, read_only,
+                   onboarding_pending) VALUES (?, ?, ?, ?, ?, ?, ?, 1)""",
+                (account, username, key, password_hash, account, invitation["id"] if invitation else None,
+                 invitation["read_only"] if invitation else 0),
             )
             response = issue_login(connection, account)
         g.activity_user_id = account
@@ -224,21 +245,28 @@ def account_routes(database, json_input, router_config):
             if g.account["joined_workspace"] is not None:
                 raise InputError("Quittez d’abord la session rejointe.", 409)
             if g.account["share_code"] is None:
-                while True:
-                    code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(8))
-                    if not connection.execute("SELECT 1 FROM workspaces WHERE share_code = ?", (code,)).fetchone():
-                        break
+                code = new_connection_code(connection)
                 connection.execute("UPDATE workspaces SET share_code = ? WHERE id = ?", (code, g.workspace))
+        return "", 204
+
+    @blueprint.post("/read-only-invitation")
+    def create_read_only_invitation():
+        with account_transaction(database, write=True) as connection:
+            if g.account["joined_workspace"] is not None or not has_session(g.account):
+                raise InputError("Seul le titulaire de la session peut créer cette invitation.", 403)
+            if g.account["read_only_code"] is None:
+                code = new_connection_code(connection)
+                connection.execute("UPDATE workspaces SET read_only_code = ? WHERE id = ?", (code, g.workspace))
         return "", 204
 
     @blueprint.get("/invitation")
     @blueprint.get("/invitation-qr.png", defaults={"as_png": True})
     def invitation_link(as_png=False):
         with account_transaction(database):
-            code = g.account["share_code"]
-            if code is None or g.account["joined_workspace"] is not None:
+            if not has_session(g.account) or g.account["joined_workspace"] is not None:
                 raise InputError("Le QR code est réservé au titulaire d’une session active.", 403)
-            if request.args.get("code") != code:
+            code = request.args.get("code")
+            if not code or code not in (g.account["share_code"], g.account["read_only_code"]):
                 raise InputError("Votre code de session a changé. Actualisez la page.", 409)
         if router_error:
             raise InputError(router_error, 503)
@@ -267,18 +295,33 @@ def account_routes(database, json_input, router_config):
             connection.execute("UPDATE accounts SET site_name = ? WHERE id = ?", (name, g.account["id"]))
         return "", 204
 
+    @blueprint.put("/home-preferences")
+    def save_home_preferences():
+        preferences = home_preferences(json_input())
+        with account_transaction(database, write=True) as connection:
+            if not has_session(g.account):
+                raise InputError("Créez ou rejoignez une session pour personnaliser l’accueil.", 403)
+            preferences.setdefault("agenda_view", home_configuration(g.account["home_preferences"])["agenda_view"])
+            connection.execute(
+                "UPDATE accounts SET home_preferences = ?, onboarding_pending = 0 WHERE id = ?",
+                (json.dumps(preferences), g.account["id"]),
+            )
+        return "", 204
+
     @blueprint.post("/join")
     def join():
         limit_attempts("join", 20)
         code = connection_code(json_input().get("code"))
         with account_transaction(database, write=True) as connection:
             if has_session(g.account):
-                if g.account["joined_workspace"] is not None and g.account["share_code"] == code:
+                active_code = g.account["read_only_code"] if g.account["read_only"] else g.account["share_code"]
+                if g.account["joined_workspace"] is not None and active_code == code:
                     return "", 204
                 raise InputError("Votre compte est déjà dans une session.", 409)
-            workspace = shared_workspace_id(connection, code)
+            invitation = find_invitation(connection, code)
             connection.execute(
-                "UPDATE accounts SET joined_workspace = ? WHERE id = ?", (workspace, g.account["id"]),
+                "UPDATE accounts SET joined_workspace = ?, read_only = ? WHERE id = ?",
+                (invitation["id"], invitation["read_only"], g.account["id"]),
             )
         return "", 204
 
@@ -287,7 +330,7 @@ def account_routes(database, json_input, router_config):
         with account_transaction(database, write=True) as connection:
             if g.account["joined_workspace"] is None:
                 raise InputError("Seuls les invités peuvent quitter une session.", 409)
-            connection.execute("UPDATE accounts SET joined_workspace = NULL WHERE id = ?", (g.account["id"],))
+            connection.execute("UPDATE accounts SET joined_workspace = NULL, read_only = 0 WHERE id = ?", (g.account["id"],))
         return "", 204
 
     return blueprint

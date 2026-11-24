@@ -18,7 +18,14 @@ function parentLegend(list) {
 
 export function renderPlanning(host, session, position, onSetup) {
     const settings = session.settings;
+    const readOnly = session.account.read_only;
+    const readOnlyLabel = '<span class="viewer-label">Lecture seule</span>';
     if (!settings) {
+        if (readOnly) {
+            host.innerHTML = pageHeading("Mon planning", "calendar", "tone-planning", readOnlyLabel)
+                + empty("Planning en préparation", "Le calendrier sera visible dès que les parents auront été configurés.");
+            return;
+        }
         host.innerHTML = pageHeading("Mon planning", "calendar", "tone-planning") + empty(
             "Configurer l’alternance",
             "Choisissez les deux parents, leurs couleurs et la première semaine de garde.",
@@ -29,7 +36,7 @@ export function renderPlanning(host, session, position, onSetup) {
     }
     host.innerHTML = pageHeading(
         "Mon planning", "calendar", "tone-planning",
-        `<div class="flow planning-actions">
+        readOnly ? readOnlyLabel : `<div class="flow planning-actions">
             <a class="button secondary" href="${planningSettingsUrl}" data-route="/reglages">${icon("settings")} Réglages</a>
             <button type="button" class="button primary" data-period>${icon("swap")} Modifier une période</button>
         </div>`,
@@ -40,11 +47,10 @@ export function renderPlanning(host, session, position, onSetup) {
         timezone: settings.timezone,
         parents: list,
         legend: parentLegend(list),
-        onDay: day => openDay(day, settings, calendar.refresh),
+        onDay: day => openDay(day, settings, calendar.refresh, readOnly),
     });
-    host.querySelector("[data-period]").onclick = () => {
-        openAssignment(settings, position.day, { period: true, onDone: calendar.refresh });
-    };
+    const period = host.querySelector("[data-period]");
+    if (period) period.onclick = () => openAssignment(settings, position.day, { period: true, onDone: calendar.refresh });
 }
 
 function parentSettingsForm(session, listId) {
@@ -210,13 +216,13 @@ function openAssignment(settings, day, { period = false, manual = false, parent 
     });
 }
 
-async function openDay(day, settings, refresh) {
+async function openDay(day, settings, refresh, readOnly = false) {
     const title = capitalize(formatDate(day));
     const loading = sheet(title, '<p class="empty">Chargement de la journée…</p>');
     try {
         const [days, notes] = await Promise.all([
             api(`/planning?start=${day}&end=${day}`),
-            api(`/day-notes?day=${day}`),
+            readOnly ? [] : api(`/day-notes?day=${day}`),
         ]);
         if (!activeSheet(loading)) return;
         const item = days[day];
@@ -233,9 +239,9 @@ async function openDay(day, settings, refresh) {
                     ${item.custom ? '<p class="muted small">Attribution manuelle</p>' : ""}
                 </div>
                 ${item.carers.length ? `<p class="info-line">${icon("user")} <span>Garde · ${escapeHtml(item.carers.join(", "))}</span></p>` : ""}
-                <div><button type="button" class="button secondary" data-assignment>${icon("swap")} Modifier l’attribution</button></div>
+                ${readOnly ? "" : `<div><button type="button" class="button secondary" data-assignment>${icon("swap")} Modifier l’attribution</button></div>`}
             </div>
-            <div class="stack">
+            ${readOnly ? "" : `<div class="stack">
                 <h3 class="detail-subhead">Notes de la journée</h3>
                 ${notes.length ? notes.map(note => `<div class="detail-note">
                     ${note.checked !== null ? `<input type="checkbox" class="note-check" data-check="${note.id}"
@@ -246,8 +252,9 @@ async function openDay(day, settings, refresh) {
                 </div>`).join("") : '<p class="muted">Aucune note pour cette journée.</p>'}
                 ${formError}
                 <div><button type="button" class="button primary" data-new>${icon("plus")} Ajouter une note</button></div>
-            </div>
+            </div>`}
         </div>`);
+        if (readOnly) return;
         content.querySelector("[data-assignment]").onclick = () => openAssignment(settings, day, {
             manual: item.custom, parent: item.parent, onDone: refresh, onCancel: reopen,
         });

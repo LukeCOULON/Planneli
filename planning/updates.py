@@ -22,6 +22,12 @@ SOURCE_TYPES = {
     "static": {".css", ".js", ".png", ".webp", ".ico", ".svg", ".woff2", ".webmanifest"},
     "templates": {".html"},
 }
+NAV_UNIT_SOURCES = {Path("start_nav_unit.py")} | {
+    Path("nav_unit") / name for name in (
+        "browser.py", "browser.html", "browser.js", "browser.css", "config.json",
+        "requirements.txt", "README.md", "index.html", "settings.html", "demo.js", "demo.css",
+    )
+}
 
 
 def version_number(value):
@@ -74,7 +80,7 @@ def source_paths(directory):
     for path in sorted(directory.rglob("*")):
         relative = path.relative_to(directory)
         parts = relative.parts
-        allowed = relative in REQUIRED or relative in {Path("README.md"), VERSION_FILE} or (
+        allowed = relative in REQUIRED or relative in {Path("README.md"), VERSION_FILE} or relative in NAV_UNIT_SOURCES or (
             parts[0] == "planning" and (
                 len(parts) == 2 and path.suffix == ".py"
                 or len(parts) >= 3 and path.suffix in SOURCE_TYPES.get(parts[1], set())

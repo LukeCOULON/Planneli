@@ -22,11 +22,21 @@ Utilise les balises de Planneli suivantes quand elles aident à comprendre ou à
 - [!ATTENTION] signale un piège ou une exception.
 - [!EXERCICE] présente une consigne à résoudre.
 - [!TABLEAU] donne un titre à un tableau Markdown.
+- [!QUIZ] présente une question de révision.
+- [!CORRECTION] masque la réponse dans un volet à ouvrir.
 
 Pour chaque encadré, commence la première ligne par « > [!TYPE] » et ajoute éventuellement un titre sur la même ligne. Commence chaque ligne du corps par « > », y compris les lignes vides à l’intérieur. Le corps peut contenir du Markdown, comme dans l’exemple ci-dessous.
 
 > [!DEFINITION] Fraction
 > Une fraction représente une **partie d’un tout**.
+
+Pour un quiz, écris la question juste après « > [!QUIZ] ». Tu peux ajouter des choix ou un indice dans le corps. Laisse une ligne « > » avant la correction, puis utilise « > > [!CORRECTION] » et commence chaque ligne de réponse par « > > ». Explique la réponse avec du Markdown.
+
+> [!QUIZ] Combien font trois quarts de 20 ?
+> Fais le calcul avant d’ouvrir la correction.
+>
+> > [!CORRECTION]
+> > **15**. Divise 20 par 4 pour obtenir 5, puis multiplie par 3.
 
 Les tableaux utilisent les barres verticales du Markdown et une ligne de séparation sous l’en-tête. La balise [!TABLEAU] est facultative. Si tu l’utilises, laisse une ligne « > » entre le titre et le tableau, puis préfixe chaque ligne du tableau par « > ». Place « ---: » dans la ligne de séparation pour aligner une colonne de chiffres à droite, comme dans l’exemple ci-dessous.
 

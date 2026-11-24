@@ -11,6 +11,8 @@ CALLOUT_LABELS = {
     "attention": "Attention",
     "exercice": "Exercice",
     "tableau": "Tableau",
+    "quiz": "Quiz",
+    "correction": "Correction",
 }
 CALLOUT = re.compile(r"^\[!([a-z]+)\](?:[ \t]+(.+))?$", re.IGNORECASE)
 INLINE_MARK = re.compile(r"\[\[(nombre|bleu|vert|violet|ambre|rouge):([^\[\]\n]+)\]\]", re.IGNORECASE)
@@ -45,7 +47,7 @@ def course_callouts(state):
             first_line, _, body = inline.content.partition("\n")
             marker = CALLOUT.fullmatch(first_line.rstrip())
             if marker and (kind := marker[1].lower()) in CALLOUT_LABELS:
-                token.tag = "div"
+                token.tag = "details" if kind == "correction" else "div"
                 token.attrSet("class", f"course-callout course-callout-{kind}")
                 token.meta["label"] = CALLOUT_LABELS[kind]
                 token.meta["title"] = (marker[2] or "").strip()
@@ -80,7 +82,9 @@ def render_course_quote(renderer, tokens, index, options, env):
         return opening
     label = escapeHtml(meta["label"])
     title = escapeHtml(meta["title"])
-    label_html = f'<p class="course-callout-label">{label}</p>\n'
+    label_html = '<summary>Voir la correction</summary>\n' if tokens[index].tag == "details" else (
+        f'<p class="course-callout-label">{label}</p>\n'
+    )
     title_html = f'<p class="course-callout-title">{title}</p>\n' if title else ""
     return opening + label_html + title_html
 

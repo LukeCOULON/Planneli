@@ -13,6 +13,7 @@
     <script type="module" src="{{ url_for('static', filename='app.js' if active else 'accounts.js') }}"></script>
 </head>
 <body data-mode="{{ mode }}" data-welcome="{{ 'yes' if welcome else 'no' }}"
+      {% if read_only %}data-read-only="yes"{% endif %}
       {% if release %}data-release='{{ release | tojson }}'{% endif %}
       data-site-name="{{ site_name }}" data-default-site-name="{{ default_site_name }}"{% if account %} data-account="{{ account }}"{% endif %}>
     <svg xmlns="http://www.w3.org/2000/svg" class="symbols" aria-hidden="true">
@@ -41,13 +42,14 @@
     <a class="skip-link" href="#main">Aller au contenu</a>
     <header class="app-header">
         <div class="header-inner">
-            <a href="/" class="wordmark" data-route="/" aria-label="{{ site_name }}, accueil">
+            <a href="{{ '/planning' if read_only else '/' }}" class="wordmark" data-route="{{ '/planning' if read_only else '/' }}"
+               aria-label="{{ site_name }}, {{ 'planning' if read_only else 'accueil' }}">
                 <span class="brand-icon"><svg class="icon" aria-hidden="true"><use href="#i-calendar"></use></svg></span>
                 <span class="wordmark-name">{{ site_name }}</span>
             </a>
             <div class="header-actions">
                 {% if mode == "bench" %}<span class="bench-indicator" title="Base temporaire pour ce lancement"><span class="bench-prefix">Mode </span>bench</span>{% endif %}
-                {% if active %}
+                {% if active and not read_only %}
                 <button type="button" class="icon-button" data-search aria-label="Rechercher"><svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg></button>
                 <a href="/reglages" class="settings-link" data-route="/reglages" aria-label="Réglages">
                     <svg class="icon" aria-hidden="true"><use href="#i-settings"></use></svg>
@@ -60,51 +62,37 @@
     <main id="main" class="app-main" tabindex="-1">
         {% if active %}
         <div id="page">
-            <section class="home-hero">
+            {% if not read_only %}
+            <section class="home-hero" aria-labelledby="hero-title">
                 <div class="hero-art" aria-hidden="true"></div>
                 <div class="hero-content">
-                    <div class="date-pill" id="hero-date" hidden></div>
-                    <h1>Planning<br><span>familial.</span></h1>
-                    <p>Gardes, rendez-vous et notes<br class="mobile-break"> au même endroit.</p>
+                    <div class="hero-heading">
+                        <time class="date-pill" id="hero-date" hidden></time>
+                        <h1 id="hero-title">Aujourd’hui</h1>
+                    </div>
+                    <div id="home-today"><p class="today-feedback" role="status">Chargement du résumé…</p></div>
                 </div>
             </section>
             <section class="spaces" aria-labelledby="spaces-heading">
-                <div class="section-heading"><h2 id="spaces-heading">Mes espaces</h2></div>
-                <div class="space-list">
-                    <a class="space-card tone-planning" href="/planning" data-route="/planning">
-                        <span class="space-icon"><svg class="icon" aria-hidden="true"><use href="#i-calendar"></use></svg></span>
-                        <span class="space-text"><strong>Mon planning</strong><span>Alternance, gardes et notes par jour</span></span>
-                        <span class="space-open"><svg class="icon" aria-hidden="true"><use href="#i-right"></use></svg></span>
-                    </a>
-                    <a class="space-card tone-events" href="/evenements" data-route="/evenements">
-                        <span class="space-icon"><svg class="icon" aria-hidden="true"><use href="#i-event"></use></svg></span>
-                        <span class="space-text"><strong>Mes événements</strong><span>Rendez-vous et rappels</span></span>
-                        <span class="space-open"><svg class="icon" aria-hidden="true"><use href="#i-right"></use></svg></span>
-                    </a>
-                    <a class="space-card tone-notes" href="/notes" data-route="/notes">
-                        <span class="space-icon"><svg class="icon" aria-hidden="true"><use href="#i-note"></use></svg></span>
-                        <span class="space-text"><strong>Notes</strong><span>Votre bloc-notes</span></span>
-                        <span class="space-open"><svg class="icon" aria-hidden="true"><use href="#i-right"></use></svg></span>
-                    </a>
-                    <a class="space-card tone-tasks" href="/a-faire" data-route="/a-faire">
-                        <span class="space-icon"><svg class="icon" aria-hidden="true"><use href="#i-task"></use></svg></span>
-                        <span class="space-text"><strong>À faire</strong><span>Échéances et photos de réalisation</span></span>
-                        <span class="space-open"><svg class="icon" aria-hidden="true"><use href="#i-right"></use></svg></span>
-                    </a>
-                    <a class="space-card tone-courses" href="/cours" data-route="/cours">
-                        <span class="space-icon"><svg class="icon" aria-hidden="true"><use href="#i-book"></use></svg></span>
-                        <span class="space-text"><strong>Cours</strong><span>Fichiers Markdown classés par matière</span></span>
-                        <span class="space-open"><svg class="icon" aria-hidden="true"><use href="#i-right"></use></svg></span>
-                    </a>
-                    <a class="space-card tone-games" href="/jeux" data-route="/jeux">
-                        <span class="space-icon"><svg class="icon" aria-hidden="true"><use href="#i-games"></use></svg></span>
-                        <span class="space-text"><strong>Mini-jeux</strong><span>Blocs, fusion de tuiles et mémoire</span></span>
-                        <span class="space-open"><svg class="icon" aria-hidden="true"><use href="#i-right"></use></svg></span>
+                <div class="section-heading home-apps-heading">
+                    <h2 id="spaces-heading">Mes applications</h2>
+                    <a class="button secondary" href="/reglages?section=accueil" data-route="/reglages">
+                        <svg class="icon" aria-hidden="true"><use href="#i-settings"></use></svg> Personnaliser
                     </a>
                 </div>
-                <div id="home-setup"></div>
+                <div id="home-apps" class="home-apps"></div>
             </section>
+            {% endif %}
         </div>
+        {% if read_only %}
+        <section class="viewer-actions panel stack" data-viewer-actions aria-label="Compte et session">
+            <p class="error" data-error role="alert" hidden></p>
+            <div class="flow">
+                <button class="button secondary" type="button" data-leave>Quitter la session</button>
+                <button class="button secondary" type="button" data-logout>Se déconnecter</button>
+            </div>
+        </section>
+        {% endif %}
         {% elif account and not invitation %}
         <section class="auth-panel section-panel panel stack-lg" aria-labelledby="session-title" data-session-choice>
             <div class="page-title tone-planning">
@@ -131,7 +119,8 @@
             <p class="error" role="alert">{{ invitation_error }}</p>
             {% else %}
             {% if invitation %}
-            <p>Créez votre compte pour rejoindre la session <strong>{{ invitation_code }}</strong>.</p>
+            <p>Créez votre compte pour {{ 'consulter en lecture seule le planning de la session' if invitation_read_only else 'rejoindre la session' }}
+                <strong>{{ invitation_code }}</strong>.</p>
             {% if account %}
             <p class="muted small">Le nouveau compte remplacera votre connexion actuelle dans ce navigateur.</p>
             {% endif %}
@@ -164,7 +153,7 @@
         <noscript><p class="empty">Activez JavaScript pour utiliser {{ site_name }}.</p></noscript>
     </main>
     <footer class="app-credit">Développé et déployé par Luke Coulon</footer>
-    {% if active %}
+    {% if active and not read_only %}
     <nav class="tab-bar" aria-label="Navigation principale">
         <a class="tone-planning" href="/" data-route="/" aria-current="page"><svg class="icon" aria-hidden="true"><use href="#i-home"></use></svg><span>Accueil</span></a>
         <a class="tone-planning" href="/planning" data-route="/planning"><svg class="icon" aria-hidden="true"><use href="#i-calendar"></use></svg><span>Planning</span></a>

@@ -10,6 +10,7 @@ from .config import DEFAULT_ZONE
 PAGES = {
     "/": "Accueil", "/planning": "Planning", "/evenements": "Agenda", "/notes": "Notes",
     "/a-faire": "À faire", "/cours": "Cours", "/jeux": "Mini-jeux", "/reglages": "Réglages",
+    "/navigateur": "Navigateur intégré",
 }
 
 ACTIONS = {
@@ -17,9 +18,11 @@ ACTIONS = {
     "accounts.login": "Connexion",
     "accounts.logout": "Déconnexion",
     "accounts.share": "Création de session",
+    "accounts.create_read_only_invitation": "Création d’une invitation en lecture seule",
     "accounts.join": "Rejoint une session",
     "accounts.leave": "Quitte une session",
     "accounts.rename_site": "Modification du nom affiché",
+    "accounts.save_home_preferences": "Personnalisation de l’accueil",
     "preview_assignment": "Aperçu d’une attribution",
     "apply_assignment": "Modification du planning",
     "get_event": "Consultation d’un événement",

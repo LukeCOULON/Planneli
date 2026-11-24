@@ -40,7 +40,7 @@ function joinWorkspace() {
         ${field("Code de connexion", '<input name="code" required minlength="8" maxlength="8" autocapitalize="characters" autocomplete="off" spellcheck="false">')}
         ${formError}
         <div class="sheet-actions"><button class="button primary" type="submit">Rejoindre</button></div>
-    </form>`, "Vous accéderez au planning, aux notes, aux événements et aux tâches de cette session.");
+    </form>`, "Les accès dépendent du code que le titulaire vous a transmis.");
     submitForm(content.querySelector("form"), async data => {
         await api("/account/join", "POST", data);
         location.reload();
@@ -70,24 +70,26 @@ function bindAccountActions(section) {
     section.querySelector("[data-join]")?.addEventListener("click", joinWorkspace);
 }
 
-const sessionChoice = document.querySelector("[data-session-choice]");
+const sessionChoice = document.querySelector("[data-session-choice], [data-viewer-actions]");
 if (sessionChoice) bindAccountActions(sessionChoice);
 
-async function showInvitationQr(code) {
+async function showInvitationQr(code, readOnly = false) {
+    const title = readOnly ? "Partager le planning en lecture seule" : "Partager la session";
     const query = new URLSearchParams({ code });
     let link;
     try {
         ({ url: link } = await api(`/account/invitation?${query}`));
     } catch (error) {
-        sheet("Partager la session", errorBlock(error));
+        sheet(title, errorBlock(error));
         return;
     }
-    const content = sheet("Partager la session", `<div class="stack">
+    const content = sheet(title, `<div class="stack">
         <img class="session-qr" alt="QR code du lien d’inscription à la session">
         <p class="error" role="alert" data-qr-error hidden>Le QR code est indisponible. Vous pouvez copier le lien.</p>
         ${field("Lien d’invitation", input("invitation", link, 'readonly spellcheck="false"'))}
         <div class="sheet-actions"><button class="button primary" type="button" data-copy-link>Copier le lien</button></div>
-    </div>`, "Scannez le QR code pour créer un compte et rejoindre la session.");
+    </div>`, readOnly ? "Le QR code ouvre une inscription pour consulter le planning."
+        : "Scannez le QR code pour créer un compte et rejoindre la session.");
     const image = content.querySelector("img");
     image.addEventListener("error", () => {
         image.hidden = true;
@@ -143,10 +145,44 @@ export function renderAccountSettings(host, account, page) {
         </div>
         <div class="flow"><button class="button secondary" type="button" data-invitation-qr>Afficher le QR code</button></div>
     </div>
-    <p class="muted small">Les personnes qui rejoignent votre session peuvent consulter et modifier ses données.</p>`;
+    <p class="muted small">Ce code permet de consulter et de modifier les données de la session.</p>
+    <div class="settings-invitation field">
+        <h3>Planning en lecture seule</h3>
+        <p class="muted small">Cet accès est limité au calendrier des gardes.</p>
+        ${account.read_only_code ? `<label for="read-only-code">Code de lecture seule</label>
+            <div class="settings-code-actions">
+                <input id="read-only-code" class="session-code" value="${escapeHtml(account.read_only_code)}" readonly spellcheck="false">
+                <button class="button primary" type="button" data-copy-read-only>Copier le code de lecture</button>
+            </div>
+            <div class="flow"><button class="button secondary" type="button" data-read-only-qr>Afficher le QR de lecture seule</button></div>`
+            : `${formError}<div><button class="button secondary" type="button" data-create-read-only>Créer un code de lecture seule</button></div>`}
+    </div>`;
     host.querySelector("[data-copy]").onclick = async () => {
         const copied = await copyText(host.querySelector("#session-code"));
         toast(copied ? "Code copié." : "Sélectionnez Copier pour récupérer le code.");
     };
     host.querySelector("[data-invitation-qr]").onclick = () => showInvitationQr(account.code);
+    if (account.read_only_code) {
+        host.querySelector("[data-copy-read-only]").onclick = async () => {
+            const copied = await copyText(host.querySelector("#read-only-code"));
+            toast(copied ? "Code de lecture copié." : "Sélectionnez Copier pour récupérer le code.");
+        };
+        host.querySelector("[data-read-only-qr]").onclick = () => showInvitationQr(account.read_only_code, true);
+    } else {
+        host.querySelector("[data-create-read-only]").onclick = async event => {
+            const button = event.currentTarget;
+            const errorOutput = host.querySelector("[data-error]");
+            button.disabled = true;
+            errorOutput.hidden = true;
+            try {
+                await api("/account/read-only-invitation", "POST");
+                const session = await api("/session");
+                if (host.isConnected) renderAccountSettings(host, session.account, page);
+            } catch (error) {
+                errorOutput.textContent = error.message;
+                errorOutput.hidden = false;
+                button.disabled = false;
+            }
+        };
+    }
 }
