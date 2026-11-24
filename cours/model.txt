@@ -1,0 +1,40 @@
+-- INFO SUR LE COURS :
+Matière : <matière>
+Cours : <titre>
+Niveau : <niveau scolaire>
+Thème : <thème>
+Difficulté : <Facile, Intermédiaire ou Difficile>
+--
+
+## Plan du cours
+
+1. <Titre de la première partie>
+2. <Titre de la deuxième partie>
+
+## 1. <Titre de la première partie>
+
+<Explication de la notion. Utilisez [[bleu:terme important]] pour le vocabulaire et [[nombre:12,5 %]] pour une donnée chiffrée.>
+
+> [!DEFINITION] <Terme à définir>
+> <Définition et explication.>
+
+> [!EXEMPLE]
+> <Exemple adapté au niveau du cours.>
+
+> [!TABLEAU] <Titre du tableau>
+>
+> | Notion | Valeur |
+> | --- | ---: |
+> | <Première notion> | <Valeur> |
+> | <Deuxième notion> | <Valeur> |
+
+> [!ATTENTION]
+> <Piège fréquent ou point à vérifier.>
+
+> [!RETENIR]
+> <Résumé des points essentiels.>
+
+## 2. <Titre de la deuxième partie>
+
+> [!EXERCICE]
+> <Consigne à résoudre.>

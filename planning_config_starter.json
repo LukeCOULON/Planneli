@@ -1,0 +1,6 @@
+{
+  "mode": "normal",
+  "host": "localhost",
+  "port": 2229,
+  "data_dir": ".planneli-data"
+}
